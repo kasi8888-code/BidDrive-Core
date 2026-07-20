@@ -1,0 +1,5 @@
+# Ignore all Java compiled class files
+*.class
+# Ignore IDE files
+.idea/
+.vscode/
