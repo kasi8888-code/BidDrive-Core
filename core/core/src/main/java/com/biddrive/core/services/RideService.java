@@ -13,16 +13,13 @@ public class RideService {
 
     private final RideRepository rideRepository;
     private final PassengerRepository passengerRepository;
-
     public RideService(RideRepository rideRepository, PassengerRepository passengerRepository) {
         this.rideRepository = rideRepository;
         this.passengerRepository = passengerRepository;
     }
-
     public List<Ride> getAllRides() {
         return rideRepository.findAll();
     }
-
     public Optional<Ride> getRideById(Integer id) {
         return rideRepository.findById(id);
     }
@@ -44,4 +41,4 @@ public class RideService {
     public void deleteRide(Integer id) {
         rideRepository.deleteById(id);
     }
-}
+}
