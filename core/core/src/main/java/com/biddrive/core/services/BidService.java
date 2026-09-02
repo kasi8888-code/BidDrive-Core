@@ -19,11 +19,16 @@ public class BidService {
     private final BidRepository bidRepository;
     private final RideRepository rideRepository;
     private final DriverRepository driverRepository;
+    private final AuctionRedisService auctionRedisService;
 
-    public BidService(BidRepository bidRepository, RideRepository rideRepository, DriverRepository driverRepository) {
+    public BidService(BidRepository bidRepository, 
+                      RideRepository rideRepository, 
+                      DriverRepository driverRepository,
+                      AuctionRedisService auctionRedisService) {
         this.bidRepository = bidRepository;
         this.rideRepository = rideRepository;
         this.driverRepository = driverRepository;
+        this.auctionRedisService = auctionRedisService;
     }
 
     public Bid createBid(Bid bid) {
@@ -54,8 +59,13 @@ public class BidService {
             throw new RuntimeException("Bid amount must be greater than 0 and cannot exceed max allowed fare of ₹" + maxAllowedFare + " (Base Fare + ₹100).");
         }
 
+        // 6. Submit live bid to Redis In-Memory Engine (Atomically compares against lowest bid)
+        auctionRedisService.submitLiveBid(bid.getRideId(), bid.getDriverId(), bid.getBidAmount());
+
+        bid.setStatus("ACCEPTED_LOWEST");
         return bidRepository.save(bid);
     }
+
 
     /**
      * Passenger accepts a specific driver's bid.

@@ -31,8 +31,14 @@ public class RideController {
         return rideService.getRideById(id).orElse(null);
     }
 
+    @GetMapping("/{id}/auction")
+    public java.util.Map<Object, Object> getLiveAuction(@PathVariable Integer id) {
+        return rideService.getLiveAuction(id);
+    }
+
     @DeleteMapping("/{id}")
     public void deleteRide(@PathVariable Integer id) {
         rideService.deleteRide(id);
     }
+
 }
