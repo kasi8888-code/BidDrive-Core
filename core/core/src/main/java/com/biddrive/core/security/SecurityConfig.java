@@ -80,6 +80,8 @@ public class SecurityConfig {
                     session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/api/auth/**").permitAll()
+                    .requestMatchers("/ws/**").permitAll()
+                    .requestMatchers("/", "/index.html", "/test-auction.html", "/favicon.ico").permitAll()
                     .requestMatchers(HttpMethod.GET,    "/api/rides/**").authenticated()
                     .requestMatchers(HttpMethod.POST,   "/api/rides").hasRole("PASSENGER")
                     .requestMatchers(HttpMethod.DELETE, "/api/rides/**").hasRole("PASSENGER")

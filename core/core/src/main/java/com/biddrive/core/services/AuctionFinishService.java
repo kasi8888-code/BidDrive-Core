@@ -19,13 +19,16 @@ public class AuctionFinishService {
     private final RideRepository rideRepository;
     private final BidRepository bidRepository;
     private final DriverRepository driverRepository;
+    private final AuctionEventPublisher auctionEventPublisher;
 
     public AuctionFinishService(RideRepository rideRepository,
                                 BidRepository bidRepository,
-                                DriverRepository driverRepository) {
+                                DriverRepository driverRepository,
+                                AuctionEventPublisher auctionEventPublisher) {
         this.rideRepository = rideRepository;
         this.bidRepository = bidRepository;
         this.driverRepository = driverRepository;
+        this.auctionEventPublisher = auctionEventPublisher;
     }
 
     /**
@@ -52,6 +55,9 @@ public class AuctionFinishService {
             ride.setStatus("EXPIRED");
             rideRepository.save(ride);
             System.out.println("⏰ [Redis Auction Expired] Ride #" + rideId + " expired with NO bids.");
+
+            // Broadcast expiration over WebSockets
+            auctionEventPublisher.publishAuctionExpired(ride);
         } else {
             // Find the lowest bid
             Bid winningBid = bids.stream()
@@ -76,6 +82,9 @@ public class AuctionFinishService {
             System.out.println("🏆 [Redis Auction Completed] Ride #" + rideId 
                     + " MATCHED with Driver #" + winningBid.getDriverId() 
                     + " at lowest bid ₹" + winningBid.getBidAmount());
+
+            // Broadcast match over WebSockets and notify winning driver directly
+            auctionEventPublisher.publishAuctionMatched(ride, winningBid.getDriverId(), winningBid.getBidAmount());
         }
     }
 }

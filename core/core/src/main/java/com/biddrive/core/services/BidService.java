@@ -20,15 +20,18 @@ public class BidService {
     private final RideRepository rideRepository;
     private final DriverRepository driverRepository;
     private final AuctionRedisService auctionRedisService;
+    private final AuctionEventPublisher auctionEventPublisher;
 
     public BidService(BidRepository bidRepository, 
                       RideRepository rideRepository, 
                       DriverRepository driverRepository,
-                      AuctionRedisService auctionRedisService) {
+                      AuctionRedisService auctionRedisService,
+                      AuctionEventPublisher auctionEventPublisher) {
         this.bidRepository = bidRepository;
         this.rideRepository = rideRepository;
         this.driverRepository = driverRepository;
         this.auctionRedisService = auctionRedisService;
+        this.auctionEventPublisher = auctionEventPublisher;
     }
 
     public Bid createBid(Bid bid) {
@@ -63,7 +66,12 @@ public class BidService {
         auctionRedisService.submitLiveBid(bid.getRideId(), bid.getDriverId(), bid.getBidAmount());
 
         bid.setStatus("ACCEPTED_LOWEST");
-        return bidRepository.save(bid);
+        Bid savedBid = bidRepository.save(bid);
+
+        // 7. Broadcast new lowest bid over WebSockets (including bidId and remaining TTL)
+        auctionEventPublisher.publishNewBid(savedBid.getRideId(), savedBid.getId(), savedBid.getDriverId(), savedBid.getBidAmount());
+
+        return savedBid;
     }
 
 
@@ -111,6 +119,12 @@ public class BidService {
         // 4. Update Driver status to BUSY
         driver.setStatus("BUSY");
         driverRepository.save(driver);
+
+        // 5. Close / delete the active Redis auction key
+        auctionRedisService.closeAuction(ride.getId());
+
+        // 6. Broadcast auction match over WebSockets and notify winning driver directly
+        auctionEventPublisher.publishAuctionMatched(ride, driver.getId(), acceptedBid.getBidAmount());
 
         return acceptedBid;
     }

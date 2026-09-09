@@ -1,7 +1,62 @@
-# Ignore all Java compiled class files
+# ====================================
+# Java / Compiled Classes
+# ====================================
 *.class
-# Ignore log files
+*.war
+*.ear
+*.jar
+*.nar
+hs_err_pid*
+
+# ====================================
+# Maven Build Output
+# ====================================
+target/
+**/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+build.log
+
+# ====================================
+# Logs & Databases
+# ====================================
 *.log
-# Ignore IDE files
+*.log.*
+pg.log
+
+# ====================================
+# IDE / Editor Specific Files
+# ====================================
 .idea/
+*.iml
+*.iws
+*.ipr
 .vscode/
+*.code-workspace
+.settings/
+.project
+.classpath
+.factorypath
+
+# ====================================
+# OS Generated Files
+# ====================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ====================================
+# Temporary & Scratch Files
+# ====================================
+*.swp
+*~
+*.bak
+*.tmp

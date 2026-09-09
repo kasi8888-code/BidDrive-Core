@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BidDrive Live Auction Monitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0b0f19;
+            --bg-secondary: #131b2e;
+            --bg-card: #1c2742;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --text-primary: #f9fafb;
+            --text-secondary: #9ca3af;
+            --border: #2e3b5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+
+        .logo-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-badge {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            font-size: 16px;
+        }
+
+        .ws-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .ws-badge.connected {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card-header {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #e5e7eb;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--accent);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: #fff;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-secondary {
+            background: #374151;
+            color: #e5e7eb;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        /* Live Bidding Ticker */
+        .ticker-card {
+            background: linear-gradient(135deg, #1e293b, #111827);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ticker-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .ticker-bid {
+            font-size: 48px;
+            font-weight: 800;
+            color: #38bdf8;
+            margin-bottom: 8px;
+            letter-spacing: -1px;
+            transition: transform 0.2s;
+        }
+
+        .ticker-bid.pulse {
+            transform: scale(1.1);
+            color: #4ade80;
+        }
+
+        .ticker-sub {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        /* Logs console */
+        .logs-box {
+            background: #080c14;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            height: 250px;
+            overflow-y: auto;
+            padding: 12px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+        }
+
+        .log-time {
+            color: #64748b;
+        }
+
+        .log-type-bid {
+            color: #38bdf8;
+            font-weight: bold;
+        }
+
+        .log-type-match {
+            color: #4ade80;
+            font-weight: bold;
+        }
+
+        .log-type-expire {
+            color: #f87171;
+            font-weight: bold;
+        }
+
+        .log-type-info {
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-title">
+                <div class="logo-badge">BidDrive</div>
+                <h2>Live Real-Time Auction Testboard</h2>
+            </div>
+            <div id="connectionBadge" class="ws-badge">
+                <span id="dot">●</span> <span id="connectionText">Disconnected</span>
+            </div>
+        </header>
+
+        <!-- Live Ride Broadcast Alert Banner -->
+        <div id="newRideBanner" style="display:none; background: linear-gradient(135deg, #1e3a8a, #2563eb); border: 1px solid #60a5fa; border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);">
+            <div>
+                <span style="background: #38bdf8; color: #0f172a; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 12px; margin-right: 8px;">NEW RIDE</span>
+                <span id="newRideDetails" style="color: #ffffff; font-weight: 600; font-size: 14px;"></span>
+            </div>
+            <button id="switchRideBtn" class="btn-success" style="padding: 8px 18px; font-size: 13px; font-weight: 700; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);">⚡ Join Ride & Bid</button>
+        </div>
+
+        <!-- Top Section: Authentication & Connection -->
+        <div class="grid">
+            <div class="card">
+                <div class="card-header">
+                    <span>1. Authenticate & Obtain JWT</span>
+                </div>
+                <div class="form-group">
+                    <label>Role Quick Select</label>
+                    <select id="roleSelect" onchange="applyRolePreset()">
+                        <option value="PASSENGER">Passenger (passenger@example.com)</option>
+                        <option value="DRIVER1">Driver A (driver1@example.com)</option>
+                        <option value="DRIVER2">Driver B (driver2@example.com)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="authName" value="Priya Sharma">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="authEmail" value="passenger@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" id="authPhone" value="9876543210">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="authPassword" value="Password123!">
+                </div>
+                <div class="btn-group">
+                    <button class="btn-primary" onclick="login()">Login</button>
+                    <button class="btn-secondary" onclick="register()">Auto-Register</button>
+                </div>
+                <div class="form-group" style="margin-top: 14px;">
+                    <label>Active JWT Token</label>
+                    <input type="text" id="jwtToken" placeholder="eyJhbGciOi..." readonly>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>2. WebSocket Room Subscription</span>
+                </div>
+                <div class="form-group">
+                    <label>Ride ID to Monitor (/topic/auction/{rideId})</label>
+                    <input type="number" id="monitorRideId" value="1" placeholder="e.g. 1">
+                </div>
+                <div class="btn-group">
+                    <button class="btn-success" onclick="connectWebSocket()">Connect WebSocket</button>
+                    <button class="btn-primary" onclick="subscribeToRide()">Join Auction Room</button>
+                    <button class="btn-secondary" onclick="disconnectWebSocket()">Disconnect</button>
+                </div>
+                <div style="margin-top: 18px; font-size: 13px; color: var(--text-secondary);">
+                    <p>Subscribed to:</p>
+                    <ul style="margin-left: 20px; margin-top: 6px;">
+                        <li><code id="subAuctionTopic">/topic/auction/1</code> (Public Bids)</li>
+                        <li><code>/topic/rides</code> (New Rides Broadcast)</li>
+                        <li><code>/user/queue/notifications</code> (Private Direct Alerts)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Section: Live Ticker Card -->
+        <div class="card ticker-card" style="margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                <div class="ticker-title">Ride #<span id="displayRideId">1</span> Reverse Auction Window (180s)</div>
+                <div id="countdownTimer" style="font-size: 15px; font-weight: 700; color: #f59e0b; background: rgba(245, 158, 11, 0.15); padding: 5px 14px; border-radius: 20px; border: 1px solid rgba(245, 158, 11, 0.3);">
+                    ⏱ Time Remaining: <span id="timerText">03:00</span>
+                </div>
+            </div>
+            <div id="liveBidDisplay" class="ticker-bid">₹ --</div>
+            <div id="liveBidDetails" class="ticker-sub">Waiting for bids...</div>
+        </div>
+
+        <!-- Actions Section: Passenger / Driver Actions -->
+        <div class="grid">
+            <div class="card">
+                <div class="card-header">
+                    <span>Passenger Action: Request Ride</span>
+                </div>
+                <div class="form-group">
+                    <label>Pickup Location</label>
+                    <input type="text" id="pickupLocation" value="Koramangala, Bangalore">
+                </div>
+                <div class="form-group">
+                    <label>Destination Location</label>
+                    <input type="text" id="destinationLocation" value="Indiranagar, Bangalore">
+                </div>
+                <div class="form-group">
+                    <label>Base Fare (₹)</label>
+                    <input type="number" id="baseFare" value="300">
+                </div>
+                <button class="btn-primary" onclick="createRide()">Post Ride Request</button>
+
+                <!-- Incoming Driver Offers List (Passenger can accept immediately) -->
+                <div id="incomingBidsContainer" style="margin-top: 18px; display: none;">
+                    <label style="font-weight: 700; color: #38bdf8; display: block; margin-bottom: 8px;">
+                        ⚡ Live Driver Offers (Click to Accept & Book):
+                    </label>
+                    <div id="incomingBidsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>Driver Action: Submit Bid</span>
+                </div>
+                <div class="form-group">
+                    <label>Bid Amount (₹) - Must be lower than current lowest</label>
+                    <input type="number" id="bidAmount" placeholder="e.g. 270">
+                </div>
+                <div class="btn-group">
+                    <button class="btn-success" onclick="submitBid()">Submit Live Bid</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Section: Live Event Stream -->
+        <div class="card">
+            <div class="card-header">
+                <span>Real-Time WebSocket Event Stream</span>
+                <button class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="clearLogs()">Clear</button>
+            </div>
+            <div id="logsBox" class="logs-box"></div>
+        </div>
+    </div>
+
+    <script>
+        let stompClient = null;
+        let currentAuctionSubscription = null;
+        let activeToken = "";
+        let currentUserRole = "PASSENGER";
+
+        const PRESETS = {
+            PASSENGER: {
+                email: "passenger@example.com",
+                name: "Priya Sharma",
+                phoneNumber: "9876543210",
+                role: "PASSENGER",
+                licensePlate: "",
+                carType: ""
+            },
+            DRIVER1: {
+                email: "driver1@example.com",
+                name: "Driver Ramesh",
+                phoneNumber: "9876543211",
+                role: "DRIVER",
+                licensePlate: "KA-01-AB-1234",
+                carType: "Sedan"
+            },
+            DRIVER2: {
+                email: "driver2@example.com",
+                name: "Driver Suresh",
+                phoneNumber: "9876543212",
+                role: "DRIVER",
+                licensePlate: "KA-02-CD-5678",
+                carType: "SUV"
+            }
+        };
+
+        function applyRolePreset() {
+            const roleKey = document.getElementById("roleSelect").value;
+            const preset = PRESETS[roleKey] || PRESETS.PASSENGER;
+            document.getElementById("authName").value = preset.name;
+            document.getElementById("authEmail").value = preset.email;
+            document.getElementById("authPhone").value = preset.phoneNumber;
+            currentUserRole = preset.role;
+            log("INFO", `Switched to preset: ${preset.name} (${preset.email})`);
+        }
+
+        function log(type, msg) {
+            const box = document.getElementById("logsBox");
+            const time = new Date().toLocaleTimeString();
+            let typeClass = "log-type-info";
+            if (type === "BID") typeClass = "log-type-bid";
+            if (type === "MATCH" || type === "WIN") typeClass = "log-type-match";
+            if (type === "EXPIRE") typeClass = "log-type-expire";
+            if (type === "ERROR") typeClass = "log-type-expire";
+            if (type === "AUTH") typeClass = "log-type-match";
+
+            const row = document.createElement("div");
+            row.className = "log-entry";
+            row.innerHTML = `<span class="log-time">[${time}]</span> <span class="${typeClass}">[${type}]</span> ${msg}`;
+            box.appendChild(row);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById("logsBox").innerHTML = "";
+        }
+
+        async function register() {
+            const roleKey = document.getElementById("roleSelect").value;
+            const preset = PRESETS[roleKey] || PRESETS.PASSENGER;
+            const name = document.getElementById("authName").value || preset.name;
+            const email = document.getElementById("authEmail").value || preset.email;
+            const phone = document.getElementById("authPhone").value || preset.phoneNumber;
+            const password = document.getElementById("authPassword").value || "Password123!";
+
+            const payload = {
+                name: name,
+                email: email,
+                password: password,
+                phoneNumber: phone,
+                role: preset.role
+            };
+
+            if (preset.role === "DRIVER") {
+                payload.licensePlate = preset.licensePlate;
+                payload.carType = preset.carType;
+            }
+
+            log("AUTH", `Attempting registration for ${email} (${preset.role})...`);
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok && data.token) {
+                    activeToken = data.token;
+                    document.getElementById("jwtToken").value = activeToken;
+                    currentUserRole = data.role;
+                    log("AUTH", `✅ Registered successfully as ${data.email} (${data.role}). Token acquired!`);
+                } else if (res.status === 400 && (JSON.stringify(data).includes("already registered") || JSON.stringify(data).includes("Integrity"))) {
+                    log("INFO", `User ${email} is already registered. Attempting automatic login...`);
+                    await login();
+                } else {
+                    log("ERROR", `Registration rejected: ${JSON.stringify(data)}`);
+                }
+            } catch (err) {
+                log("ERROR", `Registration error: ${err.message}`);
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById("authEmail").value;
+            const password = document.getElementById("authPassword").value;
+
+            log("AUTH", `Attempting login for ${email}...`);
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (res.ok && data.token) {
+                    activeToken = data.token;
+                    document.getElementById("jwtToken").value = activeToken;
+                    currentUserRole = data.role;
+                    log("AUTH", `✅ Logged in successfully as ${data.email} (${data.role}). Token acquired!`);
+                } else {
+                    log("ERROR", `Login failed: ${JSON.stringify(data)}`);
+                }
+            } catch (err) {
+                log("ERROR", `Login error: ${err.message}`);
+            }
+        }
+
+        function connectWebSocket() {
+            if (!activeToken) {
+                alert("Please Login or Register first to obtain a JWT token.");
+                return;
+            }
+
+            log("WS", "Initiating SockJS connection to /ws...");
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null; // Disable excessive console frame output
+
+            const headers = {
+                'Authorization': 'Bearer ' + activeToken
+            };
+
+            stompClient.connect(headers, function (frame) {
+                document.getElementById("connectionBadge").classList.add("connected");
+                document.getElementById("connectionText").innerText = "Connected";
+                log("WS", "🟢 STOMP Connected successfully!");
+
+                // Subscribe to public new rides topic
+                stompClient.subscribe('/topic/rides', function (message) {
+                    const event = JSON.parse(message.body);
+                    log("RIDE", `📢 ${event.message} (Base Fare: ₹${event.baseFare})`);
+                    showNewRideAlert(event);
+                });
+
+                // Subscribe to private notifications queue
+                stompClient.subscribe('/user/queue/notifications', function (message) {
+                    const event = JSON.parse(message.body);
+                    log("NOTIF", `🔔 DIRECT ALERT: ${event.message}`);
+                    if (event.eventType === "RIDE_AWARDED") {
+                        alert("🎉 YOU WON THE RIDE! Fare: ₹" + event.lowestBid);
+                    }
+                });
+
+                // Auto-subscribe to current monitor ride
+                subscribeToRide();
+            }, function (error) {
+                document.getElementById("connectionBadge").classList.remove("connected");
+                document.getElementById("connectionText").innerText = "Disconnected";
+                log("ERROR", `🔴 WebSocket Error: ${error}`);
+            });
+        }
+
+        function showNewRideAlert(event) {
+            const banner = document.getElementById("newRideBanner");
+            const details = document.getElementById("newRideDetails");
+            const btn = document.getElementById("switchRideBtn");
+
+            if (!banner || !details || !btn) return;
+
+            details.innerText = `Ride #${event.rideId}: ${event.pickupLocation} ➔ ${event.destinationLocation} | Offered Base Fare: ₹${event.baseFare}`;
+            banner.style.display = "flex";
+
+            btn.onclick = function () {
+                document.getElementById("monitorRideId").value = event.rideId;
+                subscribeToRide();
+                banner.style.display = "none";
+                log("INFO", `Switched monitor room to newly posted Ride #${event.rideId}`);
+            };
+
+            // If user is a Driver, automatically switch or suggest the bid
+            if (currentUserRole === "DRIVER") {
+                const currentRideId = document.getElementById("monitorRideId").value;
+                // If the driver is currently idling on an old ride (e.g. 1)
+                if (currentRideId === "1" || !countdownInterval) {
+                    document.getElementById("monitorRideId").value = event.rideId;
+                    subscribeToRide();
+                }
+            }
+        }
+
+        async function fetchInitialAuctionState(rideId) {
+            const bidDisplay = document.getElementById("liveBidDisplay");
+            const bidDetails = document.getElementById("liveBidDetails");
+            const bidInput = document.getElementById("bidAmount");
+
+            try {
+                const res = await fetch(`/api/rides/${rideId}/auction`, {
+                    headers: { 'Authorization': 'Bearer ' + activeToken }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.lowestBid) {
+                        const currentLowest = parseFloat(data.lowestBid);
+                        bidDisplay.innerText = "₹ " + currentLowest;
+                        if (data.lowestDriverId === "NONE") {
+                            bidDetails.innerText = "Starting Base Fare offered by Passenger";
+                        } else {
+                            bidDetails.innerText = `Current lowest bid held by Driver #${data.lowestDriverId}`;
+                        }
+                        if (data.status === "ACTIVE") {
+                            startCountdown(180);
+                            if (bidInput) bidInput.value = Math.max(10, currentLowest - 10);
+                        } else {
+                            stopCountdown(data.status);
+                        }
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.warn("Could not fetch Redis auction state:", err);
+            }
+
+            // Fallback: fetch ride entity directly
+            try {
+                const res = await fetch(`/api/rides/${rideId}`, {
+                    headers: { 'Authorization': 'Bearer ' + activeToken }
+                });
+                if (res.ok) {
+                    const ride = await res.json();
+                    if (ride && ride.baseFare) {
+                        bidDisplay.innerText = "₹ " + ride.baseFare;
+                        bidDetails.innerText = `Status: ${ride.status}. Starting Base Fare: ₹${ride.baseFare}`;
+                        if (ride.status === "INITIATED") {
+                            startCountdown(180);
+                            if (bidInput) bidInput.value = Math.max(10, ride.baseFare - 10);
+                        } else {
+                            stopCountdown(ride.status);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn("Could not fetch Ride state:", err);
+            }
+        }
+
+        function subscribeToRide() {
+            if (!stompClient || !stompClient.connected) {
+                alert("Please connect WebSocket first.");
+                return;
+            }
+
+            const rideId = document.getElementById("monitorRideId").value;
+            if (!rideId) return;
+
+            document.getElementById("displayRideId").innerText = rideId;
+            document.getElementById("subAuctionTopic").innerText = `/topic/auction/${rideId}`;
+
+            if (currentAuctionSubscription) {
+                currentAuctionSubscription.unsubscribe();
+            }
+
+            log("WS", `Subscribing to /topic/auction/${rideId}...`);
+            // Immediately query the server so the screen displays the actual base fare!
+            fetchInitialAuctionState(rideId);
+
+            currentAuctionSubscription = stompClient.subscribe(`/topic/auction/${rideId}`, function (message) {
+                const event = JSON.parse(message.body);
+                handleAuctionEvent(event);
+            });
+        }
+
+        let countdownInterval = null;
+
+        function startCountdown(totalSeconds) {
+            if (countdownInterval) clearInterval(countdownInterval);
+            let remaining = totalSeconds || 180;
+
+            const timerElem = document.getElementById("timerText");
+            const badge = document.getElementById("countdownTimer");
+            if (badge) {
+                badge.style.color = '#f59e0b';
+                badge.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+                badge.style.background = 'rgba(245, 158, 11, 0.15)';
+            }
+
+            function tick() {
+                if (remaining <= 0) {
+                    clearInterval(countdownInterval);
+                    if (timerElem) timerElem.innerText = "00:00 (EXPIRED)";
+                    if (badge) {
+                        badge.style.color = '#ef4444';
+                        badge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                    }
+                    return;
+                }
+                const m = Math.floor(remaining / 60).toString().padStart(2, '0');
+                const s = (remaining % 60).toString().padStart(2, '0');
+                if (timerElem) timerElem.innerText = `${m}:${s}`;
+
+                if (remaining <= 30 && badge) {
+                    badge.style.color = '#ef4444';
+                    badge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                }
+                remaining--;
+            }
+
+            tick();
+            countdownInterval = setInterval(tick, 1000);
+        }
+
+        function stopCountdown(statusText) {
+            if (countdownInterval) clearInterval(countdownInterval);
+            const timerElem = document.getElementById("timerText");
+            const badge = document.getElementById("countdownTimer");
+            if (timerElem) timerElem.innerText = statusText || "CONCLUDED";
+            if (badge) {
+                badge.style.color = '#10b981';
+                badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                badge.style.background = 'rgba(16, 185, 129, 0.15)';
+            }
+        }
+
+        function handleAuctionEvent(event) {
+            const bidDisplay = document.getElementById("liveBidDisplay");
+            const bidDetails = document.getElementById("liveBidDetails");
+
+            // 1. Synchronize the countdown timer across all clients using server remainingSeconds
+            if (event.remainingSeconds !== undefined && event.remainingSeconds !== null && event.remainingSeconds > 0) {
+                if (event.eventType !== "AUCTION_MATCHED" && event.eventType !== "AUCTION_EXPIRED") {
+                    startCountdown(event.remainingSeconds);
+                }
+            }
+
+            if (event.eventType === "NEW_BID") {
+                bidDisplay.innerText = "₹ " + event.lowestBid;
+                bidDisplay.classList.add("pulse");
+                setTimeout(() => bidDisplay.classList.remove("pulse"), 400);
+
+                bidDetails.innerText = `Held by: ${event.driverName || 'Driver #' + event.driverId}`;
+                log("BID", `🔥 New Lowest Bid: ₹${event.lowestBid} by ${event.driverName || 'Driver #' + event.driverId}`);
+
+                // For Passenger: render incoming offer with direct Accept & Book button!
+                renderIncomingBidForPassenger(event);
+            } else if (event.eventType === "AUCTION_MATCHED") {
+                stopCountdown("MATCHED 🏆");
+                bidDisplay.innerText = "₹ " + event.lowestBid + " (MATCHED)";
+                bidDetails.innerText = `Winner: ${event.driverName || 'Driver #' + event.driverId}`;
+                log("MATCH", `🏆 ${event.message}`);
+                const incomingBox = document.getElementById("incomingBidsContainer");
+                if (incomingBox) incomingBox.style.display = "none";
+            } else if (event.eventType === "AUCTION_EXPIRED") {
+                stopCountdown("EXPIRED ⏰");
+                bidDisplay.innerText = "EXPIRED";
+                bidDetails.innerText = "No bids submitted during auction window.";
+                log("EXPIRE", `⏰ ${event.message}`);
+                const incomingBox = document.getElementById("incomingBidsContainer");
+                if (incomingBox) incomingBox.style.display = "none";
+            }
+        }
+
+        function renderIncomingBidForPassenger(event) {
+            const container = document.getElementById("incomingBidsContainer");
+            const list = document.getElementById("incomingBidsList");
+            if (!container || !list) return;
+
+            container.style.display = "block";
+
+            const card = document.createElement("div");
+            card.id = "bid-card-" + event.bidId;
+            card.style.cssText = "background: #1e293b; border: 1px solid #3b82f6; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.2);";
+            card.innerHTML = `
+                <div>
+                    <div style="font-weight: 700; font-size: 15px; color: #f8fafc;">${event.driverName || 'Driver #' + event.driverId}</div>
+                    <div style="font-size: 13px; color: #94a3b8; margin-top: 2px;">
+                        Offered Fare: <span style="font-size: 17px; font-weight: 800; color: #38bdf8;">₹${event.lowestBid}</span>
+                    </div>
+                </div>
+                <button class="btn-success" onclick="acceptDriverBid(${event.bidId}, ${event.lowestBid}, '${event.driverName || 'Driver #' + event.driverId}')" style="padding: 8px 16px; font-size: 13px; font-weight: 700;">
+                    ✓ Accept & Book Ride
+                </button>
+            `;
+            // Put the latest lowest bid on top
+            list.prepend(card);
+        }
+
+        async function acceptDriverBid(bidId, amount, driverName) {
+            if (!activeToken) {
+                alert("Please authenticate first.");
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to accept ${driverName}'s bid of ₹${amount} and book the ride now?`)) {
+                return;
+            }
+
+            log("ACTION", `Accepting bid #${bidId} from ${driverName} for ₹${amount}...`);
+
+            try {
+                const res = await fetch(`/api/bids/${bidId}/accept`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + activeToken,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    log("MATCH", `🎉 Ride successfully BOOKED with ${driverName} for ₹${amount}!`);
+                    stopCountdown("MATCHED 🏆");
+                    document.getElementById("liveBidDisplay").innerText = "₹ " + amount + " (BOOKED)";
+                    document.getElementById("liveBidDetails").innerText = `Matched with: ${driverName}. Driver has been assigned.`;
+                    const container = document.getElementById("incomingBidsContainer");
+                    if (container) container.style.display = "none";
+                } else {
+                    const err = await res.json();
+                    log("ERROR", `Failed to accept bid: ${err.message || JSON.stringify(err)}`);
+                }
+            } catch (e) {
+                log("ERROR", `Error accepting bid: ${e.message}`);
+            }
+        }
+
+        function disconnectWebSocket() {
+            if (stompClient) {
+                stompClient.disconnect(function () {
+                    document.getElementById("connectionBadge").classList.remove("connected");
+                    document.getElementById("connectionText").innerText = "Disconnected";
+                    log("WS", "Disconnected from WebSocket.");
+                });
+            }
+        }
+
+        async function createRide() {
+            if (!activeToken) {
+                alert("Please login first.");
+                return;
+            }
+
+            const pickup = document.getElementById("pickupLocation").value;
+            const dest = document.getElementById("destinationLocation").value;
+            const fare = document.getElementById("baseFare").value;
+
+            try {
+                const res = await fetch('/api/rides', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + activeToken
+                    },
+                    body: JSON.stringify({
+                        pickupLocation: pickup,
+                        destinationLocation: dest,
+                        baseFare: fare
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    log("RIDE", `Ride #${data.id} created successfully. Base fare: ₹${data.baseFare}`);
+                    document.getElementById("monitorRideId").value = data.id;
+                    document.getElementById("displayRideId").innerText = data.id;
+                    document.getElementById("liveBidDisplay").innerText = "₹ " + data.baseFare;
+                    document.getElementById("liveBidDetails").innerText = "Auction ACTIVE. Base fare established.";
+                    subscribeToRide();
+                    startCountdown(180);
+                } else {
+                    log("ERROR", `Failed to create ride: ${JSON.stringify(data)}`);
+                }
+            } catch (err) {
+                log("ERROR", `Create ride error: ${err.message}`);
+            }
+        }
+
+        async function submitBid() {
+            if (!activeToken) {
+                alert("Please login first as Driver.");
+                return;
+            }
+
+            const rideId = document.getElementById("monitorRideId").value;
+            const amount = document.getElementById("bidAmount").value;
+
+            if (!amount) {
+                alert("Please enter a bid amount.");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/bids', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + activeToken
+                    },
+                    body: JSON.stringify({
+                        rideId: parseInt(rideId),
+                        bidAmount: parseFloat(amount)
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    log("BID", `Bid of ₹${data.bidAmount} placed successfully.`);
+                } else {
+                    log("ERROR", `Bid rejected: ${data.message || JSON.stringify(data)}`);
+                }
+            } catch (err) {
+                log("ERROR", `Bid error: ${err.message}`);
+            }
+        }
+    </script>
+</body>
+</html>

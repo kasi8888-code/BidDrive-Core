@@ -13,14 +13,20 @@ public class AuctionRedisService {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private static final String KEY_PREFIX = "auction:ride:";
-    private static final long TTL_SECONDS = 300; // 300 Seconds (5 Minutes) Auction Window for Postman testing
+
+    @org.springframework.beans.factory.annotation.Value("${auction.ttl-seconds:180}")
+    private long ttlSeconds; // 180 Seconds (3 Minutes) Auction Window
 
     public AuctionRedisService(RedisTemplate<String, Object> redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
+    public long getTtlSeconds() {
+        return ttlSeconds;
+    }
+
     /**
-     * Initializes a 60-second ephemeral auction in Redis.
+     * Initializes a 180-second ephemeral auction in Redis.
      */
     public void initAuction(Integer rideId, BigDecimal baseFare) {
         String key = KEY_PREFIX + rideId;
@@ -30,21 +36,43 @@ public class AuctionRedisService {
         auctionData.put("lowestBid", baseFare.toString());
         auctionData.put("lowestDriverId", "NONE");
         auctionData.put("status", "ACTIVE");
-
+        auctionData.put("durationSeconds", String.valueOf(ttlSeconds));
 
         // Put all fields into Redis Hash
         redisTemplate.opsForHash().putAll(key, auctionData);
 
-        // Set 60-second Time-To-Live (TTL)
-        redisTemplate.expire(key, TTL_SECONDS, TimeUnit.SECONDS);
+        // Set 180-second Time-To-Live (TTL)
+        redisTemplate.expire(key, ttlSeconds, TimeUnit.SECONDS);
     }
 
     /**
-     * Retrieves current auction details from Redis.
+     * Retrieves current auction details from Redis, including real-time remaining TTL in seconds.
      */
     public Map<Object, Object> getAuction(Integer rideId) {
         String key = KEY_PREFIX + rideId;
-        return redisTemplate.opsForHash().entries(key);
+        Map<Object, Object> entries = redisTemplate.opsForHash().entries(key);
+        if (entries != null && !entries.isEmpty()) {
+            Long expire = redisTemplate.getExpire(key, TimeUnit.SECONDS);
+            entries.put("remainingSeconds", String.valueOf(expire != null && expire > 0 ? expire : 0L));
+        }
+        return entries;
+    }
+
+    /**
+     * Returns exact remaining TTL in seconds directly from Redis.
+     */
+    public Long getRemainingSeconds(Integer rideId) {
+        String key = KEY_PREFIX + rideId;
+        Long expire = redisTemplate.getExpire(key, TimeUnit.SECONDS);
+        return expire != null && expire > 0 ? expire : 0L;
+    }
+
+    /**
+     * Closes / deletes the Redis auction key (e.g. when passenger manually accepts a bid early).
+     */
+    public void closeAuction(Integer rideId) {
+        String key = KEY_PREFIX + rideId;
+        redisTemplate.delete(key);
     }
 
     /**

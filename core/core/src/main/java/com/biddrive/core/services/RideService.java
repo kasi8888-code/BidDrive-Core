@@ -14,13 +14,16 @@ public class RideService {
     private final RideRepository rideRepository;
     private final PassengerRepository passengerRepository;
     private final AuctionRedisService auctionRedisService;
+    private final AuctionEventPublisher auctionEventPublisher;
 
     public RideService(RideRepository rideRepository, 
                        PassengerRepository passengerRepository,
-                       AuctionRedisService auctionRedisService) {
+                       AuctionRedisService auctionRedisService,
+                       AuctionEventPublisher auctionEventPublisher) {
         this.rideRepository = rideRepository;
         this.passengerRepository = passengerRepository;
         this.auctionRedisService = auctionRedisService;
+        this.auctionEventPublisher = auctionEventPublisher;
     }
 
     public List<Ride> getAllRides() {
@@ -44,8 +47,11 @@ public class RideService {
         // 1. Save to SQL
         Ride savedRide = rideRepository.save(ride);
 
-        // 2. Instantiate 15-second Ephemeral Auction in Redis
+        // 2. Instantiate Ephemeral Auction in Redis
         auctionRedisService.initAuction(savedRide.getId(), savedRide.getBaseFare());
+
+        // 3. Broadcast real-time event to /topic/rides for all watching drivers
+        auctionEventPublisher.publishRideCreated(savedRide);
 
         return savedRide;
     }
