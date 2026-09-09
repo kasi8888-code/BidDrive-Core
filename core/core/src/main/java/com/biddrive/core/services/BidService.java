@@ -47,7 +47,7 @@ public class BidService {
 
         // 4. Rule: Ride must be INITIATED (active auction)
         if (!"INITIATED".equalsIgnoreCase(ride.getStatus())) {
-            throw new RuntimeException("Ride is no longer open for bidding.");
+            throw new RuntimeException("Ride #" + ride.getId() + " is no longer open for bidding (Current status: " + ride.getStatus() + "). Please create a new ride or ensure you bid before the auction expires.");
         }
 
         // 5. Rule: Max allowed fare = baseFare + 100
@@ -69,14 +69,20 @@ public class BidService {
 
     /**
      * Passenger accepts a specific driver's bid.
+     * Enforces ownership: only the passenger who created the ride can accept bids for it.
      */
     @Transactional
-    public Bid acceptBid(Integer bidId) {
+    public Bid acceptBid(Integer bidId, Integer authenticatedPassengerId) {
         Bid acceptedBid = bidRepository.findById(bidId)
                 .orElseThrow(() -> new RuntimeException("Bid not found with id: " + bidId));
 
         Ride ride = rideRepository.findById(acceptedBid.getRideId())
                 .orElseThrow(() -> new RuntimeException("Ride not found"));
+
+        // IDOR Protection: Verify authenticated passenger owns this ride
+        if (!ride.getPassengerId().equals(authenticatedPassengerId)) {
+            throw new RuntimeException("Access Denied: You do not own the ride associated with this bid.");
+        }
 
         Driver driver = driverRepository.findById(acceptedBid.getDriverId())
                 .orElseThrow(() -> new RuntimeException("Driver not found"));

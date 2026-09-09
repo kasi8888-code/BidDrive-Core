@@ -58,7 +58,14 @@ public class RideService {
         return rideRepository.save(ride);
     }
 
-    public void deleteRide(Integer id) {
+    public void deleteRide(Integer id, Integer authenticatedPassengerId) {
+        Ride ride = rideRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Ride not found with id: " + id));
+
+        if (!ride.getPassengerId().equals(authenticatedPassengerId)) {
+            throw new RuntimeException("Access Denied: You do not own this ride.");
+        }
+
         rideRepository.deleteById(id);
     }
 }

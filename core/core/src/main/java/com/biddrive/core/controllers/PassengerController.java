@@ -24,9 +24,4 @@ public class PassengerController {
     public Passenger getPassengerById(@PathVariable Integer id) {
         return passengerService.getPassengerById(id).orElse(null);
     }
-
-    @PostMapping
-    public Passenger createPassenger(@RequestBody Passenger passenger) {
-        return passengerService.createPassenger(passenger);
-    }
 }

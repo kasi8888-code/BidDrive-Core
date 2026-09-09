@@ -13,7 +13,7 @@ public class AuctionRedisService {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private static final String KEY_PREFIX = "auction:ride:";
-    private static final long TTL_SECONDS = 60; // 60 Seconds Auction Window
+    private static final long TTL_SECONDS = 300; // 300 Seconds (5 Minutes) Auction Window for Postman testing
 
     public AuctionRedisService(RedisTemplate<String, Object> redisTemplate) {
         this.redisTemplate = redisTemplate;

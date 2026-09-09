@@ -24,14 +24,4 @@ public class DriverController {
     public Driver getDriverById(@PathVariable Integer id) {
         return driverService.getDriverById(id).orElse(null);
     }
-
-    @PostMapping
-    public Driver createDriver(@RequestBody Driver driver) {
-        return driverService.createDriver(driver);
-    }
-
-    @DeleteMapping("/{id}")
-    public void deleteDriver(@PathVariable Integer id) {
-        driverService.deleteDriver(id);
-    }
 }
