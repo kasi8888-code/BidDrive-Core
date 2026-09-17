@@ -60,3 +60,19 @@ desktop.ini
 *~
 *.bak
 *.tmp
+
+# ====================================
+# Secrets, Credentials & Local Config
+# ====================================
+**/application.properties
+!**/application.properties.example
+*.env
+.env
+*.pem
+*.key
+*.p12
+
+# ====================================
+# Legacy Unrelated Folders
+# ====================================
+LoginSystem/

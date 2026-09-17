@@ -1,0 +1,43 @@
+# =====================================================================
+# POSTGRESQL DATABASE CONNECTION CONFIGURATION (TEMPLATE)
+# =====================================================================
+
+# JDBC URL pointing to your local PostgreSQL instance
+spring.datasource.url=${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/biddrive_db}
+
+# Your PostgreSQL username (default: postgres)
+spring.datasource.username=${SPRING_DATASOURCE_USERNAME:postgres}
+
+# Your PostgreSQL password (set via env var SPRING_DATASOURCE_PASSWORD or define in local application.properties)
+spring.datasource.password=${SPRING_DATASOURCE_PASSWORD:your_postgres_password_here}
+
+# PostgreSQL driver
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# =====================================================================
+# HIBERNATE / JPA PROPERTIES
+# =====================================================================
+spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+
+# =====================================================================
+# REDIS CACHE CONFIGURATION
+# =====================================================================
+spring.data.redis.host=${REDIS_HOST:localhost}
+spring.data.redis.port=${REDIS_PORT:6379}
+
+# =====================================================================
+# JWT CONFIGURATION
+# =====================================================================
+# HMAC-SHA256 Secret (Must be >= 32 characters / 256 bits)
+jwt.secret=${JWT_SECRET:ReplaceWithYourOwnSecretKeyMin32CharsLong!}
+# Token expiry: 86400000 ms = 24 hours
+jwt.expiration-ms=86400000
+
+# =====================================================================
+# AUCTION CONFIGURATION
+# =====================================================================
+# Reverse-bidding window duration in seconds (180s = 3 minutes)
+auction.ttl-seconds=180
