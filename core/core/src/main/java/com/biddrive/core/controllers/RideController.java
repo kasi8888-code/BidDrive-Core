@@ -28,10 +28,32 @@ public class RideController {
 
     private final RideService rideService;
     private final JwtUtil jwtUtil;
+    private final com.biddrive.core.services.GeoDistanceService geoDistanceService;
 
-    public RideController(RideService rideService, JwtUtil jwtUtil) {
+    public RideController(RideService rideService, 
+                          JwtUtil jwtUtil,
+                          com.biddrive.core.services.GeoDistanceService geoDistanceService) {
         this.rideService = rideService;
         this.jwtUtil = jwtUtil;
+        this.geoDistanceService = geoDistanceService;
+    }
+
+    /**
+     * GET /api/rides/estimate
+     * Calculates distance and suggested base fare for given pickup and destination coordinates.
+     */
+    @GetMapping("/estimate")
+    public Map<String, Object> estimateRide(
+            @RequestParam Double pickupLat,
+            @RequestParam Double pickupLng,
+            @RequestParam Double destinationLat,
+            @RequestParam Double destinationLng) {
+        double distanceKm = geoDistanceService.calculateDistanceKm(pickupLat, pickupLng, destinationLat, destinationLng);
+        java.math.BigDecimal suggestedFare = geoDistanceService.calculateSuggestedBaseFare(distanceKm);
+        return Map.of(
+                "distanceKm", distanceKm,
+                "suggestedBaseFare", suggestedFare
+        );
     }
 
     /**
@@ -81,5 +103,14 @@ public class RideController {
         String token = authHeader.substring(7);
         Integer authenticatedPassengerId = jwtUtil.extractUserId(token);
         rideService.deleteRide(id, authenticatedPassengerId);
+    }
+
+    /**
+     * PUT /api/rides/{id}/complete
+     * Finishes an active matched ride and automatically sets the assigned driver back to Available.
+     */
+    @PutMapping("/{id}/complete")
+    public Ride completeRide(@PathVariable Integer id) {
+        return rideService.completeRide(id);
     }
 }

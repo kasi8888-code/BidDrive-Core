@@ -23,6 +23,21 @@ public class Ride {
     @Column(name = "destination_location", nullable = false, length = 100)
     private String destinationLocation;
 
+    @Column(name = "pickup_latitude")
+    private Double pickupLatitude;
+
+    @Column(name = "pickup_longitude")
+    private Double pickupLongitude;
+
+    @Column(name = "destination_latitude")
+    private Double destinationLatitude;
+
+    @Column(name = "destination_longitude")
+    private Double destinationLongitude;
+
+    @Column(name = "estimated_distance_km")
+    private Double estimatedDistanceKm;
+
     @Column(name = "base_fare", nullable = false, precision = 10, scale = 2)
     private BigDecimal baseFare;
 

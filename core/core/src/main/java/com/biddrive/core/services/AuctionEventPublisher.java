@@ -34,9 +34,10 @@ public class AuctionEventPublisher {
     }
 
     /**
-     * Broadcasts newly created ride to all available drivers listening on /topic/rides.
+     * Broadcasts newly created ride to /topic/rides and sends targeted push alerts
+     * to each nearby driver's private queue (/user/{email}/queue/rides).
      */
-    public void publishRideCreated(Ride ride) {
+    public void publishRideCreated(Ride ride, java.util.List<com.biddrive.core.dtos.NearbyDriverDto> nearbyDrivers) {
         Long remainingSeconds = auctionRedisService.getRemainingSeconds(ride.getId());
         AuctionEventDto event = AuctionEventDto.builder()
                 .eventType("RIDE_CREATED")
@@ -45,6 +46,11 @@ public class AuctionEventPublisher {
                 .baseFare(ride.getBaseFare())
                 .pickupLocation(ride.getPickupLocation())
                 .destinationLocation(ride.getDestinationLocation())
+                .pickupLatitude(ride.getPickupLatitude())
+                .pickupLongitude(ride.getPickupLongitude())
+                .destinationLatitude(ride.getDestinationLatitude())
+                .destinationLongitude(ride.getDestinationLongitude())
+                .estimatedDistanceKm(ride.getEstimatedDistanceKm())
                 .status(ride.getStatus())
                 .remainingSeconds(remainingSeconds > 0 ? remainingSeconds : 180L)
                 .timestamp(LocalDateTime.now())
@@ -53,8 +59,45 @@ public class AuctionEventPublisher {
                         + " with base fare ₹" + ride.getBaseFare())
                 .build();
 
+        // 1. General topic for dashboard/global monitors
         messagingTemplate.convertAndSend("/topic/rides", event);
         System.out.println("📢 [WebSocket Broadcast] New Ride posted to /topic/rides: Ride #" + ride.getId());
+
+        // 2. Targeted Geo-Dispatch: Send private alerts to each nearby driver within range
+        if (nearbyDrivers != null && !nearbyDrivers.isEmpty()) {
+            for (com.biddrive.core.dtos.NearbyDriverDto driver : nearbyDrivers) {
+                if (driver.getEmail() != null) {
+                    AuctionEventDto targetedEvent = AuctionEventDto.builder()
+                            .eventType("RIDE_CREATED")
+                            .rideId(ride.getId())
+                            .passengerId(ride.getPassengerId())
+                            .baseFare(ride.getBaseFare())
+                            .pickupLocation(ride.getPickupLocation())
+                            .destinationLocation(ride.getDestinationLocation())
+                            .pickupLatitude(ride.getPickupLatitude())
+                            .pickupLongitude(ride.getPickupLongitude())
+                            .destinationLatitude(ride.getDestinationLatitude())
+                            .destinationLongitude(ride.getDestinationLongitude())
+                            .estimatedDistanceKm(ride.getEstimatedDistanceKm())
+                            .driverDistanceToPickupKm(driver.getDistanceKm())
+                            .status(ride.getStatus())
+                            .remainingSeconds(remainingSeconds > 0 ? remainingSeconds : 180L)
+                            .timestamp(LocalDateTime.now())
+                            .message("🎯 Nearby Ride Alert! Ride #" + ride.getId() + " is " 
+                                    + driver.getDistanceKm() + " km away from your current location.")
+                            .build();
+
+                    messagingTemplate.convertAndSendToUser(driver.getEmail(), "/queue/rides", targetedEvent);
+                    System.out.println("🎯 [Targeted Dispatch] Dispatched Ride #" + ride.getId() 
+                            + " to Driver " + driver.getName() + " (" + driver.getEmail() 
+                            + ", " + driver.getDistanceKm() + " km away)");
+                }
+            }
+        }
+    }
+
+    public void publishRideCreated(Ride ride) {
+        publishRideCreated(ride, null);
     }
 
     /**
@@ -170,5 +213,23 @@ public class AuctionEventPublisher {
             messagingTemplate.convertAndSendToUser(passenger.getEmail(), "/queue/notifications", event);
         }
         System.out.println("📢 [WebSocket Broadcast] Ride #" + ride.getId() + " expired.");
+    }
+
+    /**
+     * Broadcasts ride completion when the trip finishes.
+     */
+    public void publishRideCompleted(Ride ride) {
+        AuctionEventDto event = AuctionEventDto.builder()
+                .eventType("RIDE_COMPLETED")
+                .rideId(ride.getId())
+                .passengerId(ride.getPassengerId())
+                .status("COMPLETED")
+                .timestamp(LocalDateTime.now())
+                .message("Ride #" + ride.getId() + " has been COMPLETED. Driver is now Available.")
+                .build();
+
+        messagingTemplate.convertAndSend("/topic/auction/" + ride.getId(), event);
+        messagingTemplate.convertAndSend("/topic/rides", event);
+        System.out.println("📢 [WebSocket Broadcast] Ride #" + ride.getId() + " COMPLETED.");
     }
 }

@@ -45,7 +45,15 @@ public class BidService {
 
         // 3. Rule: Driver must be Available
         if (!"Available".equalsIgnoreCase(driver.getStatus())) {
-            throw new RuntimeException("Driver is not Available to place bids.");
+            // Check if driver is ACTUALLY driving an ongoing MATCHED ride
+            boolean isCurrentlyDriving = hasActiveMatchedTrip(driver.getId());
+            if (!isCurrentlyDriving) {
+                // Self-healing: previous test or expired auction left driver in BUSY state. Automatically recover!
+                driver.setStatus("Available");
+                driver = driverRepository.save(driver);
+            } else {
+                throw new RuntimeException("Driver is currently on an active trip and cannot place bids.");
+            }
         }
 
         // 4. Rule: Ride must be INITIATED (active auction)
@@ -139,6 +147,19 @@ public class BidService {
 
     public List<Bid> getBidsByRideId(Integer rideId) {
         return bidRepository.findByRideId(rideId);
+    }
+
+    private boolean hasActiveMatchedTrip(Integer driverId) {
+        List<Bid> bids = bidRepository.findByDriverId(driverId);
+        for (Bid b : bids) {
+            if ("ACCEPTED".equalsIgnoreCase(b.getStatus())) {
+                Optional<Ride> r = rideRepository.findById(b.getRideId());
+                if (r.isPresent() && "MATCHED".equalsIgnoreCase(r.get().getStatus())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }
 

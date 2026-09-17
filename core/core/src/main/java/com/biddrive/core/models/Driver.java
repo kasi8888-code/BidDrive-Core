@@ -41,6 +41,15 @@ public class Driver {
     @Column(precision = 3, scale = 2, nullable = false)
     private BigDecimal rating = BigDecimal.valueOf(5.00);
 
+    @Column(name = "current_latitude")
+    private Double currentLatitude;
+
+    @Column(name = "current_longitude")
+    private Double currentLongitude;
+
+    @Column(name = "last_location_update")
+    private LocalDateTime lastLocationUpdate;
+
     // Role stored as a string so we can use it directly in JWT claims.
     // DRIVER is the only role for this entity.
     @Column(nullable = false, length = 20)

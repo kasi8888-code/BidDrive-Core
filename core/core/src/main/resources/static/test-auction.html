@@ -9,6 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
     <style>
         :root {
             --bg-primary: #0b0f19;
@@ -361,6 +363,47 @@
             </div>
             <div id="liveBidDisplay" class="ticker-bid">₹ --</div>
             <div id="liveBidDetails" class="ticker-sub">Waiting for bids...</div>
+            <div style="margin-top: 10px;">
+                <button id="completeRideBtn" class="btn-success" style="display: none; padding: 7px 16px; font-size: 13px; font-weight: 700; background: linear-gradient(135deg, #10b981, #059669);" onclick="completeActiveRide()">
+                    🏁 Complete Trip & Free Driver (PUT /api/rides/{id}/complete)
+                </button>
+            </div>
+        </div>
+
+        <!-- Phase 5: Interactive Geospatial Radar & Live Map -->
+        <div class="card" style="margin-bottom: 24px;">
+            <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+                <span>📍 Interactive Geospatial Radar & Map (Bangalore Demo Nodes)</span>
+                <div style="font-size: 13px; color: var(--text-secondary);">
+                    Map Click Target:
+                    <label style="margin-left: 8px; cursor: pointer;"><input type="radio" name="mapClickMode" value="pickup" checked> 🔵 Pickup</label>
+                    <label style="margin-left: 8px; cursor: pointer;"><input type="radio" name="mapClickMode" value="dest"> 🟢 Destination</label>
+                    <label style="margin-left: 8px; cursor: pointer;"><input type="radio" name="mapClickMode" value="driver"> 🚖 Driver GPS</label>
+                </div>
+            </div>
+
+            <!-- Quick City Presets -->
+            <div style="display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;">
+                <span style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">Quick Presets:</span>
+                <button type="button" class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="applyPreset('KORAMANGALA_TO_INDIRANAGAR')">Koramangala ➔ Indiranagar (~5.1 km)</button>
+                <button type="button" class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="applyPreset('HSR_TO_WHITEFIELD')">HSR Layout ➔ Whitefield (~12.6 km)</button>
+                <button type="button" class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="applyPreset('KORAMANGALA_TO_AIRPORT')">Koramangala ➔ Airport (~32 km)</button>
+            </div>
+
+            <!-- Leaflet Map Container -->
+            <div id="map" style="height: 340px; width: 100%; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 14px;"></div>
+
+            <!-- Real-Time Distance & Suggested Fare Bar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 10px 16px; flex-wrap: wrap; gap: 10px;">
+                <div style="font-size: 14px;">
+                    📏 Trip Distance: <strong id="summaryDistance" style="color: #38bdf8;">-- km</strong>
+                </div>
+                <div style="font-size: 14px;">
+                    💡 Suggested Baseline Fare: <strong id="summarySuggestedFare" style="color: #10b981;">₹ --</strong>
+                    <span style="font-size: 12px; color: var(--text-secondary); margin-left: 6px;">(₹50 base + ₹15/km)</span>
+                </div>
+                <button class="btn-secondary" style="padding: 5px 12px; font-size: 12px;" onclick="calculateRouteEstimate()">Recalculate Estimate</button>
+            </div>
         </div>
 
         <!-- Actions Section: Passenger / Driver Actions -->
@@ -370,18 +413,26 @@
                     <span>Passenger Action: Request Ride</span>
                 </div>
                 <div class="form-group">
-                    <label>Pickup Location</label>
-                    <input type="text" id="pickupLocation" value="Koramangala, Bangalore">
+                    <label>Pickup Location & Coordinates</label>
+                    <input type="text" id="pickupLocation" value="Koramangala, Bangalore" style="margin-bottom: 6px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <input type="number" step="0.0001" id="pickupLat" value="12.9352" placeholder="Latitude" onchange="onCoordChange()">
+                        <input type="number" step="0.0001" id="pickupLng" value="77.6245" placeholder="Longitude" onchange="onCoordChange()">
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label>Destination Location</label>
-                    <input type="text" id="destinationLocation" value="Indiranagar, Bangalore">
+                    <label>Destination Location & Coordinates</label>
+                    <input type="text" id="destinationLocation" value="Indiranagar, Bangalore" style="margin-bottom: 6px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <input type="number" step="0.0001" id="destLat" value="12.9784" placeholder="Latitude" onchange="onCoordChange()">
+                        <input type="number" step="0.0001" id="destLng" value="77.6408" placeholder="Longitude" onchange="onCoordChange()">
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label>Base Fare (₹)</label>
-                    <input type="number" id="baseFare" value="300">
+                    <label>Base Fare (₹) <span style="font-size: 12px; color: var(--text-secondary);">(Auto-filled from distance or custom)</span></label>
+                    <input type="number" id="baseFare" value="127">
                 </div>
-                <button class="btn-primary" onclick="createRide()">Post Ride Request</button>
+                <button class="btn-primary" onclick="createRide()">Post Ride Request (Geo-Dispatched)</button>
 
                 <!-- Incoming Driver Offers List (Passenger can accept immediately) -->
                 <div id="incomingBidsContainer" style="margin-top: 18px; display: none;">
@@ -394,11 +445,38 @@
 
             <div class="card">
                 <div class="card-header">
-                    <span>Driver Action: Submit Bid</span>
+                    <span>Driver Action: GPS Location & Bidding</span>
                 </div>
+
+                <!-- Driver GPS Broadcast Sub-panel -->
+                <div style="background: rgba(19, 27, 46, 0.7); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 13px; font-weight: 700; color: #f59e0b; margin-bottom: 8px;">
+                        📡 Driver Real-Time GPS Simulation
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                        <input type="number" step="0.0001" id="driverLat" value="12.9380" placeholder="Driver Lat">
+                        <input type="number" step="0.0001" id="driverLng" value="77.6220" placeholder="Driver Lng">
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn-primary" style="padding: 6px 12px; font-size: 12px; background: #f59e0b;" onclick="updateDriverGps()">
+                            📡 Send GPS Ping (PUT /api/drivers/location)
+                        </button>
+                        <button class="btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="fetchNearbyDrivers()">
+                            🔍 Find Nearby Available Drivers (5km)
+                        </button>
+                        <button class="btn-success" style="padding: 6px 12px; font-size: 12px; background: #10b981;" onclick="setDriverStatus('Available')">
+                            🟢 Go Online (Set Available)
+                        </button>
+                        <button class="btn-secondary" style="padding: 6px 12px; font-size: 12px; color: #ef4444; border-color: rgba(239,68,68,0.4);" onclick="setDriverStatus('Offline')">
+                            🔴 Go Offline
+                        </button>
+                    </div>
+                    <div id="driverLocationStatus" style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;"></div>
+                </div>
+
                 <div class="form-group">
                     <label>Bid Amount (₹) - Must be lower than current lowest</label>
-                    <input type="number" id="bidAmount" placeholder="e.g. 270">
+                    <input type="number" id="bidAmount" placeholder="e.g. 120">
                 </div>
                 <div class="btn-group">
                     <button class="btn-success" onclick="submitBid()">Submit Live Bid</button>
@@ -480,6 +558,32 @@
             document.getElementById("logsBox").innerHTML = "";
         }
 
+        async function parseSafeResponse(res) {
+            let text = "";
+            try {
+                text = await res.text();
+            } catch (err) {
+                return { error: `Read error: ${err.message}` };
+            }
+            if (!text || !text.trim()) {
+                if (!res.ok) {
+                    if (res.status === 403) {
+                        return { error: "HTTP 403 Forbidden: You do not have permission for this action with your current role. (e.g. Only DRIVERS can send GPS updates or place bids; PASSENGERS create rides)." };
+                    }
+                    if (res.status === 401) {
+                        return { error: "HTTP 401 Unauthorized: Session invalid or expired. Please login again." };
+                    }
+                    return { error: `HTTP ${res.status} ${res.statusText}` };
+                }
+                return {};
+            }
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                return { message: text, error: text };
+            }
+        }
+
         async function register() {
             const roleKey = document.getElementById("roleSelect").value;
             const preset = PRESETS[roleKey] || PRESETS.PASSENGER;
@@ -509,7 +613,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                const data = await res.json();
+                const data = await parseSafeResponse(res);
                 if (res.ok && data.token) {
                     activeToken = data.token;
                     document.getElementById("jwtToken").value = activeToken;
@@ -519,7 +623,8 @@
                     log("INFO", `User ${email} is already registered. Attempting automatic login...`);
                     await login();
                 } else {
-                    log("ERROR", `Registration rejected: ${JSON.stringify(data)}`);
+                    const msg = data.error || data.message || JSON.stringify(data);
+                    log("ERROR", `Registration rejected: ${msg}`);
                 }
             } catch (err) {
                 log("ERROR", `Registration error: ${err.message}`);
@@ -538,14 +643,15 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password })
                 });
-                const data = await res.json();
+                const data = await parseSafeResponse(res);
                 if (res.ok && data.token) {
                     activeToken = data.token;
                     document.getElementById("jwtToken").value = activeToken;
                     currentUserRole = data.role;
                     log("AUTH", `✅ Logged in successfully as ${data.email} (${data.role}). Token acquired!`);
                 } else {
-                    log("ERROR", `Login failed: ${JSON.stringify(data)}`);
+                    const msg = data.error || data.message || JSON.stringify(data);
+                    log("ERROR", `Login failed: ${msg}`);
                 }
             } catch (err) {
                 log("ERROR", `Login error: ${err.message}`);
@@ -579,13 +685,20 @@
                     showNewRideAlert(event);
                 });
 
-                // Subscribe to private notifications queue
+                // Subscribe to private notifications queue (Wins, Matches, Expiries)
                 stompClient.subscribe('/user/queue/notifications', function (message) {
                     const event = JSON.parse(message.body);
                     log("NOTIF", `🔔 DIRECT ALERT: ${event.message}`);
                     if (event.eventType === "RIDE_AWARDED") {
                         alert("🎉 YOU WON THE RIDE! Fare: ₹" + event.lowestBid);
                     }
+                });
+
+                // Subscribe to private targeted rides queue (Geo-dispatched only to nearby drivers)
+                stompClient.subscribe('/user/queue/rides', function (message) {
+                    const event = JSON.parse(message.body);
+                    log("GEO-DISPATCH", `🎯 TARGETED NEARBY ALERT: ${event.message} (Distance: ${event.driverDistanceToPickupKm || 'Nearby'} km)`);
+                    showNewRideAlert(event);
                 });
 
                 // Auto-subscribe to current monitor ride
@@ -635,7 +748,7 @@
                     headers: { 'Authorization': 'Bearer ' + activeToken }
                 });
                 if (res.ok) {
-                    const data = await res.json();
+                    const data = await parseSafeResponse(res);
                     if (data && data.lowestBid) {
                         const currentLowest = parseFloat(data.lowestBid);
                         bidDisplay.innerText = "₹ " + currentLowest;
@@ -663,7 +776,7 @@
                     headers: { 'Authorization': 'Bearer ' + activeToken }
                 });
                 if (res.ok) {
-                    const ride = await res.json();
+                    const ride = await parseSafeResponse(res);
                     if (ride && ride.baseFare) {
                         bidDisplay.innerText = "₹ " + ride.baseFare;
                         bidDetails.innerText = `Status: ${ride.status}. Starting Base Fare: ₹${ride.baseFare}`;
@@ -785,6 +898,15 @@
                 log("MATCH", `🏆 ${event.message}`);
                 const incomingBox = document.getElementById("incomingBidsContainer");
                 if (incomingBox) incomingBox.style.display = "none";
+                const completeBtn = document.getElementById("completeRideBtn");
+                if (completeBtn) completeBtn.style.display = "inline-block";
+            } else if (event.eventType === "RIDE_COMPLETED") {
+                stopCountdown("COMPLETED 🏁");
+                bidDisplay.innerText = "COMPLETED 🏁";
+                bidDetails.innerText = "Trip has ended. Assigned driver is now Available.";
+                log("RIDE", `🏁 ${event.message}`);
+                const completeBtn = document.getElementById("completeRideBtn");
+                if (completeBtn) completeBtn.style.display = "none";
             } else if (event.eventType === "AUCTION_EXPIRED") {
                 stopCountdown("EXPIRED ⏰");
                 bidDisplay.innerText = "EXPIRED";
@@ -792,6 +914,8 @@
                 log("EXPIRE", `⏰ ${event.message}`);
                 const incomingBox = document.getElementById("incomingBidsContainer");
                 if (incomingBox) incomingBox.style.display = "none";
+                const completeBtn = document.getElementById("completeRideBtn");
+                if (completeBtn) completeBtn.style.display = "none";
             }
         }
 
@@ -841,17 +965,19 @@
                     }
                 });
 
+                const data = await parseSafeResponse(res);
                 if (res.ok) {
-                    const data = await res.json();
                     log("MATCH", `🎉 Ride successfully BOOKED with ${driverName} for ₹${amount}!`);
                     stopCountdown("MATCHED 🏆");
                     document.getElementById("liveBidDisplay").innerText = "₹ " + amount + " (BOOKED)";
                     document.getElementById("liveBidDetails").innerText = `Matched with: ${driverName}. Driver has been assigned.`;
                     const container = document.getElementById("incomingBidsContainer");
                     if (container) container.style.display = "none";
+                    const completeBtn = document.getElementById("completeRideBtn");
+                    if (completeBtn) completeBtn.style.display = "inline-block";
                 } else {
-                    const err = await res.json();
-                    log("ERROR", `Failed to accept bid: ${err.message || JSON.stringify(err)}`);
+                    const msg = data.error || data.message || JSON.stringify(data);
+                    log("ERROR", `Failed to accept bid: ${msg}`);
                 }
             } catch (e) {
                 log("ERROR", `Error accepting bid: ${e.message}`);
@@ -868,15 +994,328 @@
             }
         }
 
+        // =====================================================================
+        // PHASE 5: LEAFLET MAP & GEOSPATIAL TEST ENGINE
+        // =====================================================================
+        let map = null;
+        let pickupMarker = null;
+        let destMarker = null;
+        let searchRadiusCircle = null;
+        let driverGpsMarker = null;
+        let nearbyDriverMarkers = [];
+
+        const BANGALORE_NODES = {
+            KORAMANGALA: { name: "Koramangala", lat: 12.9352, lng: 77.6245 },
+            INDIRANAGAR: { name: "Indiranagar", lat: 12.9784, lng: 77.6408 },
+            HSR: { name: "HSR Layout", lat: 12.9121, lng: 77.6446 },
+            WHITEFIELD: { name: "Whitefield", lat: 12.9698, lng: 77.7500 },
+            AIRPORT: { name: "Kempegowda Int'l Airport", lat: 13.1986, lng: 77.7066 }
+        };
+
+        function initMap() {
+            if (map) return;
+            const mapContainer = document.getElementById("map");
+            if (!mapContainer) return;
+
+            // Center between Koramangala and Indiranagar
+            map = L.map('map').setView([12.9550, 77.6350], 12);
+
+            // Free OpenStreetMap tiles (100% free, zero API key, no watermark)
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Map click listener
+            map.on('click', function (e) {
+                const mode = document.querySelector('input[name="mapClickMode"]:checked').value;
+                const lat = parseFloat(e.latlng.lat.toFixed(4));
+                const lng = parseFloat(e.latlng.lng.toFixed(4));
+
+                if (mode === 'pickup') {
+                    document.getElementById("pickupLat").value = lat;
+                    document.getElementById("pickupLng").value = lng;
+                    updateMapMarkers();
+                    calculateRouteEstimate();
+                    log("MAP", `🔵 Set Pickup location at (${lat}, ${lng})`);
+                } else if (mode === 'dest') {
+                    document.getElementById("destLat").value = lat;
+                    document.getElementById("destLng").value = lng;
+                    updateMapMarkers();
+                    calculateRouteEstimate();
+                    log("MAP", `🟢 Set Destination location at (${lat}, ${lng})`);
+                } else if (mode === 'driver') {
+                    document.getElementById("driverLat").value = lat;
+                    document.getElementById("driverLng").value = lng;
+                    updateDriverMarkerOnly(lat, lng);
+                    log("MAP", `🚖 Set Driver GPS position at (${lat}, ${lng})`);
+                }
+            });
+
+            updateMapMarkers();
+            calculateRouteEstimate();
+        }
+
+        function updateMapMarkers() {
+            if (!map) return;
+
+            const pLat = parseFloat(document.getElementById("pickupLat").value);
+            const pLng = parseFloat(document.getElementById("pickupLng").value);
+            const dLat = parseFloat(document.getElementById("destLat").value);
+            const dLng = parseFloat(document.getElementById("destLng").value);
+
+            // Pickup Marker
+            if (!isNaN(pLat) && !isNaN(pLng)) {
+                if (pickupMarker) {
+                    pickupMarker.setLatLng([pLat, pLng]);
+                } else {
+                    pickupMarker = L.circleMarker([pLat, pLng], {
+                        radius: 8,
+                        fillColor: "#3b82f6",
+                        color: "#ffffff",
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.9
+                    }).addTo(map).bindPopup("<b>🔵 Pickup Location</b>");
+                }
+
+                // 5 km Search Radius Circle
+                if (searchRadiusCircle) {
+                    searchRadiusCircle.setLatLng([pLat, pLng]);
+                } else {
+                    searchRadiusCircle = L.circle([pLat, pLng], {
+                        radius: 5000, // 5 km in meters
+                        color: "#3b82f6",
+                        weight: 1,
+                        dashArray: '4, 8',
+                        fillColor: "#3b82f6",
+                        fillOpacity: 0.12
+                    }).addTo(map).bindPopup("<b>📡 5 km Driver Dispatch Radius</b>");
+                }
+            }
+
+            // Destination Marker
+            if (!isNaN(dLat) && !isNaN(dLng)) {
+                if (destMarker) {
+                    destMarker.setLatLng([dLat, dLng]);
+                } else {
+                    destMarker = L.circleMarker([dLat, dLng], {
+                        radius: 8,
+                        fillColor: "#10b981",
+                        color: "#ffffff",
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.9
+                    }).addTo(map).bindPopup("<b>🟢 Destination Location</b>");
+                }
+            }
+        }
+
+        function updateDriverMarkerOnly(lat, lng) {
+            if (!map) return;
+            if (driverGpsMarker) {
+                driverGpsMarker.setLatLng([lat, lng]);
+            } else {
+                driverGpsMarker = L.circleMarker([lat, lng], {
+                    radius: 9,
+                    fillColor: "#f59e0b",
+                    color: "#ffffff",
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.9
+                }).addTo(map).bindPopup("<b>🚖 My Driver Location</b>").openPopup();
+            }
+        }
+
+        function onCoordChange() {
+            updateMapMarkers();
+            calculateRouteEstimate();
+        }
+
+        async function calculateRouteEstimate() {
+            const pLat = parseFloat(document.getElementById("pickupLat").value);
+            const pLng = parseFloat(document.getElementById("pickupLng").value);
+            const dLat = parseFloat(document.getElementById("destLat").value);
+            const dLng = parseFloat(document.getElementById("destLng").value);
+
+            if (isNaN(pLat) || isNaN(pLng) || isNaN(dLat) || isNaN(dLng)) return;
+
+            // Try backend API first if authenticated
+            if (activeToken) {
+                try {
+                    const res = await fetch(`/api/rides/estimate?pickupLat=${pLat}&pickupLng=${pLng}&destinationLat=${dLat}&destinationLng=${dLng}`, {
+                        headers: { 'Authorization': 'Bearer ' + activeToken }
+                    });
+                    if (res.ok) {
+                        const data = await parseSafeResponse(res);
+                        if (data && data.distanceKm) {
+                            document.getElementById("summaryDistance").innerText = data.distanceKm + " km";
+                            document.getElementById("summarySuggestedFare").innerText = "₹ " + data.suggestedBaseFare;
+                            document.getElementById("baseFare").value = Math.round(data.suggestedBaseFare);
+                            return;
+                        }
+                    }
+                } catch (ignored) {}
+            }
+
+            // Local fallback Haversine
+            const R = 6371;
+            const dLatRad = (dLat - pLat) * Math.PI / 180;
+            const dLonRad = (dLng - pLng) * Math.PI / 180;
+            const a = Math.sin(dLatRad / 2) * Math.sin(dLatRad / 2) +
+                      Math.cos(pLat * Math.PI / 180) * Math.cos(dLat * Math.PI / 180) *
+                      Math.sin(dLonRad / 2) * Math.sin(dLonRad / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const dist = (R * c).toFixed(2);
+            const suggested = (50 + dist * 15).toFixed(2);
+
+            document.getElementById("summaryDistance").innerText = dist + " km";
+            document.getElementById("summarySuggestedFare").innerText = "₹ " + suggested;
+            document.getElementById("baseFare").value = Math.round(suggested);
+        }
+
+        function applyPreset(presetKey) {
+            if (presetKey === 'KORAMANGALA_TO_INDIRANAGAR') {
+                document.getElementById("pickupLocation").value = "Koramangala, Bangalore";
+                document.getElementById("pickupLat").value = BANGALORE_NODES.KORAMANGALA.lat;
+                document.getElementById("pickupLng").value = BANGALORE_NODES.KORAMANGALA.lng;
+
+                document.getElementById("destinationLocation").value = "Indiranagar, Bangalore";
+                document.getElementById("destLat").value = BANGALORE_NODES.INDIRANAGAR.lat;
+                document.getElementById("destLng").value = BANGALORE_NODES.INDIRANAGAR.lng;
+            } else if (presetKey === 'HSR_TO_WHITEFIELD') {
+                document.getElementById("pickupLocation").value = "HSR Layout, Bangalore";
+                document.getElementById("pickupLat").value = BANGALORE_NODES.HSR.lat;
+                document.getElementById("pickupLng").value = BANGALORE_NODES.HSR.lng;
+
+                document.getElementById("destinationLocation").value = "Whitefield, Bangalore";
+                document.getElementById("destLat").value = BANGALORE_NODES.WHITEFIELD.lat;
+                document.getElementById("destLng").value = BANGALORE_NODES.WHITEFIELD.lng;
+            } else if (presetKey === 'KORAMANGALA_TO_AIRPORT') {
+                document.getElementById("pickupLocation").value = "Koramangala, Bangalore";
+                document.getElementById("pickupLat").value = BANGALORE_NODES.KORAMANGALA.lat;
+                document.getElementById("pickupLng").value = BANGALORE_NODES.KORAMANGALA.lng;
+
+                document.getElementById("destinationLocation").value = "Kempegowda Int'l Airport";
+                document.getElementById("destLat").value = BANGALORE_NODES.AIRPORT.lat;
+                document.getElementById("destLng").value = BANGALORE_NODES.AIRPORT.lng;
+            }
+
+            updateMapMarkers();
+            calculateRouteEstimate();
+            if (map) {
+                const pLat = parseFloat(document.getElementById("pickupLat").value);
+                const pLng = parseFloat(document.getElementById("pickupLng").value);
+                map.panTo([pLat, pLng]);
+            }
+        }
+
+        async function updateDriverGps() {
+            if (!activeToken) {
+                alert("Please authenticate as a Driver first.");
+                return;
+            }
+            if (currentUserRole !== "DRIVER") {
+                log("ERROR", "❌ [Role Mismatch] You are logged in as PASSENGER. Only DRIVERS can send GPS updates. Switch to Driver Ramesh and Login.");
+                alert("You are currently logged in as a Passenger. Please select Driver Ramesh or Suresh, login, and then send GPS.");
+                return;
+            }
+
+            const lat = parseFloat(document.getElementById("driverLat").value);
+            const lng = parseFloat(document.getElementById("driverLng").value);
+
+            if (isNaN(lat) || isNaN(lng)) {
+                alert("Please enter valid Driver coordinates.");
+                return;
+            }
+
+            log("GPS", `📡 Sending real-time GPS update: (${lat}, ${lng})...`);
+
+            try {
+                const res = await fetch('/api/drivers/location', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + activeToken
+                    },
+                    body: JSON.stringify({ latitude: lat, longitude: lng })
+                });
+
+                const data = await parseSafeResponse(res);
+                if (res.ok) {
+                    document.getElementById("driverLocationStatus").innerText = `✅ GPS synced: ${data.name} at (${lat}, ${lng})`;
+                    updateDriverMarkerOnly(lat, lng);
+                    log("GPS", `✅ Redis GEO & DB updated for Driver #${data.id} (${data.name}) at (${lat}, ${lng})`);
+                } else {
+                    const msg = data.error || data.message || JSON.stringify(data);
+                    document.getElementById("driverLocationStatus").innerText = `❌ Failed: ${msg}`;
+                    log("ERROR", `GPS update rejected: ${msg}`);
+                }
+            } catch (e) {
+                log("ERROR", `GPS error: ${e.message}`);
+            }
+        }
+
+        async function fetchNearbyDrivers() {
+            const pLat = parseFloat(document.getElementById("pickupLat").value);
+            const pLng = parseFloat(document.getElementById("pickupLng").value);
+
+            log("GEO", `🔍 Querying Redis Geo for drivers within 5 km of (${pLat}, ${pLng})...`);
+
+            try {
+                const res = await fetch(`/api/drivers/nearby?latitude=${pLat}&longitude=${pLng}&radiusKm=5.0`, {
+                    headers: activeToken ? { 'Authorization': 'Bearer ' + activeToken } : {}
+                });
+
+                const drivers = await parseSafeResponse(res);
+                if (res.ok && Array.isArray(drivers)) {
+                    log("GEO", `🎯 Found ${drivers.length} driver(s) within 5 km radius!`);
+
+                    // Clear previous markers
+                    nearbyDriverMarkers.forEach(m => map.removeLayer(m));
+                    nearbyDriverMarkers = [];
+
+                    drivers.forEach(d => {
+                        log("GEO", `   ↳ Driver #${d.driverId} (${d.name}) - ${d.distanceKm} km away [${d.carType}]`);
+                        if (map && d.latitude && d.longitude) {
+                            const marker = L.circleMarker([d.latitude, d.longitude], {
+                                radius: 7,
+                                fillColor: "#10b981",
+                                color: "#ffffff",
+                                weight: 2,
+                                opacity: 1,
+                                fillOpacity: 0.9
+                            }).addTo(map).bindPopup(`<b>🚖 ${d.name}</b><br>Distance: ${d.distanceKm} km<br>Car: ${d.carType} (${d.licensePlate})`);
+                            nearbyDriverMarkers.push(marker);
+                        }
+                    });
+                } else {
+                    const msg = drivers.error || drivers.message || JSON.stringify(drivers);
+                    log("ERROR", `Nearby drivers search failed: ${msg}`);
+                }
+            } catch (e) {
+                log("ERROR", `Nearby drivers error: ${e.message}`);
+            }
+        }
+
         async function createRide() {
             if (!activeToken) {
                 alert("Please login first.");
+                return;
+            }
+            if (currentUserRole !== "PASSENGER") {
+                log("ERROR", "❌ [Role Mismatch] You are logged in as DRIVER. Only PASSENGERS can request rides. Switch to Priya Sharma and Login.");
+                alert("Only Passengers can request rides. Please select Priya Sharma and Login.");
                 return;
             }
 
             const pickup = document.getElementById("pickupLocation").value;
             const dest = document.getElementById("destinationLocation").value;
             const fare = document.getElementById("baseFare").value;
+            const pLat = parseFloat(document.getElementById("pickupLat").value);
+            const pLng = parseFloat(document.getElementById("pickupLng").value);
+            const dLat = parseFloat(document.getElementById("destLat").value);
+            const dLng = parseFloat(document.getElementById("destLng").value);
 
             try {
                 const res = await fetch('/api/rides', {
@@ -888,20 +1327,25 @@
                     body: JSON.stringify({
                         pickupLocation: pickup,
                         destinationLocation: dest,
-                        baseFare: fare
+                        pickupLatitude: isNaN(pLat) ? null : pLat,
+                        pickupLongitude: isNaN(pLng) ? null : pLng,
+                        destinationLatitude: isNaN(dLat) ? null : dLat,
+                        destinationLongitude: isNaN(dLng) ? null : dLng,
+                        baseFare: fare ? parseFloat(fare) : null
                     })
                 });
-                const data = await res.json();
+                const data = await parseSafeResponse(res);
                 if (res.ok) {
-                    log("RIDE", `Ride #${data.id} created successfully. Base fare: ₹${data.baseFare}`);
+                    log("RIDE", `Ride #${data.id} created successfully. Distance: ${data.estimatedDistanceKm || '--'} km | Base fare: ₹${data.baseFare}`);
                     document.getElementById("monitorRideId").value = data.id;
                     document.getElementById("displayRideId").innerText = data.id;
                     document.getElementById("liveBidDisplay").innerText = "₹ " + data.baseFare;
-                    document.getElementById("liveBidDetails").innerText = "Auction ACTIVE. Base fare established.";
+                    document.getElementById("liveBidDetails").innerText = `Auction ACTIVE. Estimated Trip: ${data.estimatedDistanceKm || '--'} km.`;
                     subscribeToRide();
                     startCountdown(180);
                 } else {
-                    log("ERROR", `Failed to create ride: ${JSON.stringify(data)}`);
+                    const msg = data.error || data.message || JSON.stringify(data);
+                    log("ERROR", `Failed to create ride: ${msg}`);
                 }
             } catch (err) {
                 log("ERROR", `Create ride error: ${err.message}`);
@@ -911,6 +1355,11 @@
         async function submitBid() {
             if (!activeToken) {
                 alert("Please login first as Driver.");
+                return;
+            }
+            if (currentUserRole !== "DRIVER") {
+                log("ERROR", "❌ [Role Mismatch] You are logged in as PASSENGER. Only DRIVERS can submit bids. Switch to Driver Ramesh and Login.");
+                alert("Only Drivers can place bids. Please select Driver Ramesh and Login first.");
                 return;
             }
 
@@ -934,16 +1383,83 @@
                         bidAmount: parseFloat(amount)
                     })
                 });
-                const data = await res.json();
+                const data = await parseSafeResponse(res);
                 if (res.ok) {
                     log("BID", `Bid of ₹${data.bidAmount} placed successfully.`);
                 } else {
-                    log("ERROR", `Bid rejected: ${data.message || JSON.stringify(data)}`);
+                    const msg = data.error || data.message || JSON.stringify(data);
+                    log("ERROR", `Bid rejected: ${msg}`);
                 }
             } catch (err) {
                 log("ERROR", `Bid error: ${err.message}`);
             }
         }
+
+        async function setDriverStatus(status) {
+            if (!activeToken) {
+                alert("Please authenticate as Driver first.");
+                return;
+            }
+            if (currentUserRole !== "DRIVER") {
+                log("ERROR", "❌ [Role Mismatch] Only DRIVERS have online/offline status. Switch to Driver preset and Login.");
+                alert("Only Drivers have an online/offline status. Please switch to Driver preset and Login.");
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/drivers/status?status=${encodeURIComponent(status)}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + activeToken
+                    }
+                });
+
+                const data = await parseSafeResponse(res);
+                if (res.ok) {
+                    document.getElementById("driverLocationStatus").innerText = `✅ Status updated: ${data.name} is now ${data.status}`;
+                    log("DRIVER", `🟢 Driver status set to '${data.status}'.`);
+                } else {
+                    const msg = data.error || data.message || JSON.stringify(data);
+                    log("ERROR", `Failed to update driver status: ${msg}`);
+                }
+            } catch (e) {
+                log("ERROR", `Status update error: ${e.message}`);
+            }
+        }
+
+        async function completeActiveRide() {
+            const rideId = document.getElementById("monitorRideId").value;
+            if (!rideId) return;
+
+            log("ACTION", `Completing Ride #${rideId}...`);
+            try {
+                const res = await fetch(`/api/rides/${rideId}/complete`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + activeToken
+                    }
+                });
+
+                const data = await parseSafeResponse(res);
+                if (res.ok) {
+                    log("RIDE", `🏁 Ride #${data.id} marked as COMPLETED! Driver is now Available.`);
+                    const completeBtn = document.getElementById("completeRideBtn");
+                    if (completeBtn) completeBtn.style.display = "none";
+                    document.getElementById("liveBidDisplay").innerText = "COMPLETED 🏁";
+                    document.getElementById("liveBidDetails").innerText = "Trip concluded successfully. Driver is Available.";
+                } else {
+                    const msg = data.error || data.message || JSON.stringify(data);
+                    log("ERROR", `Failed to complete ride: ${msg}`);
+                }
+            } catch (e) {
+                log("ERROR", `Complete ride error: ${e.message}`);
+            }
+        }
+
+        // Initialize Map once the DOM loads
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+        });
     </script>
 </body>
 </html>

@@ -32,6 +32,12 @@ public class AuctionEventDto {
     private BigDecimal baseFare;
     private String pickupLocation;
     private String destinationLocation;
+    private Double pickupLatitude;
+    private Double pickupLongitude;
+    private Double destinationLatitude;
+    private Double destinationLongitude;
+    private Double estimatedDistanceKm;
+    private Double driverDistanceToPickupKm;
     private String status;
     private Long remainingSeconds;
     private LocalDateTime timestamp;
