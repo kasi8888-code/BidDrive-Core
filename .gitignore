@@ -73,6 +73,7 @@ desktop.ini
 *.p12
 
 # ====================================
-# Legacy Unrelated Folders
+# Legacy Unrelated Folders & Docs
 # ====================================
 LoginSystem/
+phases.md
