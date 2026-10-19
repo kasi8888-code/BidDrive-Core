@@ -1,6 +1,8 @@
 package com.biddrive.core.listeners;
 
 import com.biddrive.core.services.AuctionFinishService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.listener.KeyExpirationEventMessageListener;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -8,6 +10,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class RedisExpirationListener extends KeyExpirationEventMessageListener {
+
+    private static final Logger log = LoggerFactory.getLogger(RedisExpirationListener.class);
 
     private final AuctionFinishService auctionFinishService;
 
@@ -26,11 +30,11 @@ public class RedisExpirationListener extends KeyExpirationEventMessageListener {
                 String rideIdStr = expiredKey.substring("auction:ride:".length());
                 Integer rideId = Integer.parseInt(rideIdStr);
 
-                System.out.println("🔔 [Redis Expiry Event] 90-second auction timer ended for key: " + expiredKey);
+                log.info("🔔 [Redis Expiry Event] Auction timer ended for key: {}", expiredKey);
 
                 auctionFinishService.finalizeAuction(rideId);
             } catch (NumberFormatException e) {
-                System.err.println("Failed to parse rideId from expired Redis key: " + expiredKey);
+                log.warn("Failed to parse rideId from expired Redis key: {}", expiredKey);
             }
         }
     }

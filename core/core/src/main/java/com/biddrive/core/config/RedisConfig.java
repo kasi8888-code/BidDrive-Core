@@ -1,5 +1,7 @@
 package com.biddrive.core.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -9,6 +11,8 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 @Configuration
 public class RedisConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(RedisConfig.class);
 
     @Bean
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
@@ -33,7 +37,7 @@ public class RedisConfig {
         try {
             connectionFactory.getConnection().serverCommands().setConfig("notify-keyspace-events", "Ex");
         } catch (Exception e) {
-            System.out.println("⚠️ Could not set notify-keyspace-events automatically. Ensure Redis config has notify-keyspace-events Ex enabled.");
+            log.warn("⚠️ Could not set notify-keyspace-events automatically. Ensure Redis config has notify-keyspace-events=Ex enabled.");
         }
 
         return container;

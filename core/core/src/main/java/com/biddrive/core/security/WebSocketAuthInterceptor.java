@@ -1,5 +1,7 @@
 package com.biddrive.core.security;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -12,6 +14,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class WebSocketAuthInterceptor implements ChannelInterceptor {
+
+    private static final Logger log = LoggerFactory.getLogger(WebSocketAuthInterceptor.class);
 
     private final JwtUtil jwtUtil;
     private final UserDetailsServiceImpl userDetailsService;
@@ -49,9 +53,9 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                         );
 
                 accessor.setUser(authentication);
-                System.out.println("🟢 [WebSocket Auth] Authenticated user: " + email + " (" + userDetails.getAuthorities() + ")");
+                log.info("🟢 [WebSocket Auth] Authenticated user: {} ({})", email, userDetails.getAuthorities());
             } else if (token != null) {
-                System.err.println("🔴 [WebSocket Auth] Invalid or expired JWT passed during STOMP CONNECT.");
+                log.warn("🔴 [WebSocket Auth] Invalid or expired JWT passed during STOMP CONNECT.");
                 throw new IllegalArgumentException("Invalid JWT token for WebSocket connection.");
             }
         }

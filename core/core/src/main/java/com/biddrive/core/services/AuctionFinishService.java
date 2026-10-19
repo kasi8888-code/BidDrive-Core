@@ -6,6 +6,8 @@ import com.biddrive.core.models.Ride;
 import com.biddrive.core.repositories.BidRepository;
 import com.biddrive.core.repositories.DriverRepository;
 import com.biddrive.core.repositories.RideRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +17,8 @@ import java.util.Optional;
 
 @Service
 public class AuctionFinishService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuctionFinishService.class);
 
     private final RideRepository rideRepository;
     private final BidRepository bidRepository;
@@ -50,7 +54,7 @@ public class AuctionFinishService {
 
             ride.setStatus("EXPIRED");
             rideRepository.save(ride);
-            System.out.println("⏰ [Redis Auction Expired] Ride #" + rideId + " expired with NO bids.");
+            log.info("⏰ [Auction Expired] Ride #{} expired with NO bids.", rideId);
 
             auctionEventPublisher.publishAuctionExpired(ride);
         } else {
@@ -83,9 +87,8 @@ public class AuctionFinishService {
                 driverRepository.save(driver);
             }
 
-            System.out.println("🏆 [Redis Auction Completed] Ride #" + rideId
-                    + " MATCHED with Driver #" + winningBid.getDriverId()
-                    + " at lowest bid ₹" + winningBid.getBidAmount());
+            log.info("🏆 [Auction Matched] Ride #{} matched with Driver #{} at lowest bid \u20b9{}",
+                    rideId, winningBid.getDriverId(), winningBid.getBidAmount());
 
             auctionEventPublisher.publishAuctionMatched(savedRide, winningBid.getDriverId(), winningBid.getBidAmount());
         }
