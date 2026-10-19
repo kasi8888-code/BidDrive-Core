@@ -21,15 +21,13 @@ public class RedisExpirationListener extends KeyExpirationEventMessageListener {
     public void onMessage(Message message, byte[] pattern) {
         String expiredKey = message.toString();
 
-        // Check if the expired key is an auction key (auction:ride:{rideId})
         if (expiredKey != null && expiredKey.startsWith("auction:ride:")) {
             try {
                 String rideIdStr = expiredKey.substring("auction:ride:".length());
                 Integer rideId = Integer.parseInt(rideIdStr);
 
-                System.out.println("🔔 [Redis Expiry Event] 60-second timer ended for key: " + expiredKey);
-                
-                // Finalize auction status in PostgreSQL
+                System.out.println("🔔 [Redis Expiry Event] 90-second auction timer ended for key: " + expiredKey);
+
                 auctionFinishService.finalizeAuction(rideId);
             } catch (NumberFormatException e) {
                 System.err.println("Failed to parse rideId from expired Redis key: " + expiredKey);

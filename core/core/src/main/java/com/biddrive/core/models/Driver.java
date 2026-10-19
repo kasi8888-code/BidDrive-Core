@@ -24,7 +24,6 @@ public class Driver {
     @Column(nullable = false, unique = true, length = 100)
     private String email;
 
-    // BCrypt hash stored here — NEVER exposed in JSON serialization
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     @Column(nullable = false)
     private String password;
@@ -38,8 +37,14 @@ public class Driver {
     @Column(nullable = false)
     private String status = "Available";
 
+    @Column(name = "preference_mode", length = 20)
+    private String preferenceMode = "BOTH";
+
     @Column(precision = 3, scale = 2, nullable = false)
     private BigDecimal rating = BigDecimal.valueOf(5.00);
+
+    @Column(name = "total_ratings")
+    private Integer totalRatings = 0;
 
     @Column(name = "current_latitude")
     private Double currentLatitude;
@@ -50,10 +55,11 @@ public class Driver {
     @Column(name = "last_location_update")
     private LocalDateTime lastLocationUpdate;
 
-    // Role stored as a string so we can use it directly in JWT claims.
-    // DRIVER is the only role for this entity.
     @Column(nullable = false, length = 20)
     private String role = "DRIVER";
+
+    @Column(name = "is_verified", nullable = false)
+    private Boolean isVerified = false;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();

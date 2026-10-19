@@ -1,0 +1,90 @@
+# =====================================================================
+# BidDrive Core — docker-compose.yml
+# Phase 8C: Local Development Stack
+#
+# Starts 3 containers in the correct startup order:
+#   1. postgres  — relational database (schema managed by Flyway)
+#   2. redis     — ephemeral auction engine + driver geospatial index
+#   3. biddrive  — Spring Boot app (waits for postgres + redis to be healthy)
+#
+# Usage:
+#   docker compose up -d          # Start all services in background
+#   docker compose logs -f        # Follow all logs
+#   docker compose down           # Stop and remove containers
+#   docker compose down -v        # Stop + delete database volumes (clean slate)
+#
+# Environment variables:
+#   Copy .env.example to .env and fill in your values.
+#   NEVER commit a .env file with real credentials to Git.
+# =====================================================================
+
+services:
+
+  # ─── PostgreSQL ──────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: biddrive-postgres
+    environment:
+      POSTGRES_DB: biddrive_db
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume: data persists across container restarts
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d biddrive_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ─── Redis ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: biddrive-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ─── BidDrive Spring Boot App ─────────────────────────────────────────
+  biddrive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: biddrive-core
+    environment:
+      # Database — override with actual credentials via .env file
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/biddrive_db
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
+      # Redis
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      # JWT Secret — MUST be changed to a long random string in production
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_IN_PRODUCTION}
+      # JPA: validate only — Flyway manages schema
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

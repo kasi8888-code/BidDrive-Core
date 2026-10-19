@@ -77,3 +77,27 @@ desktop.ini
 # ====================================
 LoginSystem/
 phases.md
+
+# ====================================
+# Android & Gradle Build Artifacts
+# ====================================
+.gradle/
+**/.gradle/
+**/build/
+local.properties
+**/local.properties
+*.apk
+*.aab
+.cxx/
+
+# ====================================
+# Node / Frontend Build Artifacts
+# ====================================
+node_modules/
+**/node_modules/
+.next/
+dist/
+test-results/
+**/test-results/
+playwright-report/
+**/playwright-report/

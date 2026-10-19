@@ -23,15 +23,15 @@ public class Passenger {
     @Column(nullable = false, unique = true, length = 100)
     private String email;
 
-    // BCrypt hash stored here — NEVER exposed in JSON serialization
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     @Column(nullable = false)
     private String password;
 
-    // Role stored as a string so we can use it directly in JWT claims.
-    // PASSENGER is the only role for this entity.
     @Column(nullable = false, length = 20)
     private String role = "PASSENGER";
+
+    @Column(name = "is_verified", nullable = false)
+    private Boolean isVerified = false;
 
     @Column(name = "created_at", updatable = false, nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();

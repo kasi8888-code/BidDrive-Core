@@ -15,9 +15,8 @@ public class RedisConfig {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
-        // String serializers for Keys and Values (lightweight & fast)
         StringRedisSerializer stringSerializer = new StringRedisSerializer();
-        
+
         template.setKeySerializer(stringSerializer);
         template.setValueSerializer(stringSerializer);
         template.setHashKeySerializer(stringSerializer);
@@ -40,7 +39,3 @@ public class RedisConfig {
         return container;
     }
 }
-
-
-
-

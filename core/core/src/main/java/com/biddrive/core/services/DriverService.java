@@ -20,11 +20,14 @@ public class DriverService {
 
     private final DriverRepository driverRepository;
     private final DriverLocationRedisService driverLocationRedisService;
+    private final GeoDistanceService geoDistanceService;
 
     public DriverService(DriverRepository driverRepository,
-                         DriverLocationRedisService driverLocationRedisService) {
+                         DriverLocationRedisService driverLocationRedisService,
+                         GeoDistanceService geoDistanceService) {
         this.driverRepository = driverRepository;
         this.driverLocationRedisService = driverLocationRedisService;
+        this.geoDistanceService = geoDistanceService;
     }
 
     public List<Driver> getAllDrivers() {
@@ -48,38 +51,49 @@ public class DriverService {
         driverRepository.deleteById(id);
     }
 
-    /**
-     * Ingests driver real-time GPS coordinates.
-     * Updates Redis Geo set (for ultra-fast proximity queries) and PostgreSQL (for durability).
-     */
+    private final java.util.Map<Integer, String> driverStatusCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public boolean isDriverAvailable(Integer driverId) {
+        String dbStatus = driverRepository.findById(driverId)
+                .map(Driver::getStatus).orElse("Available");
+        driverStatusCache.put(driverId, dbStatus);
+        return "Available".equalsIgnoreCase(dbStatus);
+    }
+
     public Driver updateDriverLocation(Integer driverId, Double latitude, Double longitude) {
-        Driver driver = driverRepository.findById(driverId)
-                .orElseThrow(() -> new RuntimeException("Driver not found with id: " + driverId));
+        String status = driverStatusCache.get(driverId);
+        Driver driver = driverRepository.findById(driverId).orElse(null);
+        if (driver != null) {
+            status = driver.getStatus() != null ? driver.getStatus() : "Available";
+            driver.setCurrentLatitude(latitude);
+            driver.setCurrentLongitude(longitude);
+            driver.setLastLocationUpdate(LocalDateTime.now());
+            driverRepository.save(driver);
+        } else {
+            if (status == null) status = "Available";
+            driver = new Driver();
+            driver.setId(driverId);
+            driver.setStatus(status);
+            driver.setCurrentLatitude(latitude);
+            driver.setCurrentLongitude(longitude);
+            driver.setLastLocationUpdate(LocalDateTime.now());
+        }
+        driverStatusCache.put(driverId, status);
 
-        driver.setCurrentLatitude(latitude);
-        driver.setCurrentLongitude(longitude);
-        driver.setLastLocationUpdate(LocalDateTime.now());
-        Driver savedDriver = driverRepository.save(driver);
-
-        // Update high-speed Redis in-memory spatial index
-        // Update high-speed Redis in-memory spatial index (only if Available)
-        if ("Available".equalsIgnoreCase(savedDriver.getStatus())) {
+        if ("Available".equalsIgnoreCase(status)) {
             driverLocationRedisService.updateDriverLocation(driverId, latitude, longitude);
         }
 
-        return savedDriver;
+        return driver;
     }
 
-    /**
-     * Updates driver online/duty status (e.g., 'Available', 'BUSY', 'Offline').
-     * If going offline or busy, cleans up the driver from the active Redis geospatial index.
-     */
     public Driver updateDriverStatus(Integer driverId, String status) {
         Driver driver = driverRepository.findById(driverId)
                 .orElseThrow(() -> new RuntimeException("Driver not found with id: " + driverId));
 
         driver.setStatus(status);
         Driver savedDriver = driverRepository.save(driver);
+        driverStatusCache.put(driverId, status);
 
         if (!"Available".equalsIgnoreCase(status)) {
             driverLocationRedisService.removeDriverLocation(driverId);
@@ -90,11 +104,6 @@ public class DriverService {
         return savedDriver;
     }
 
-    /**
-     * Searches for nearby drivers within radiusKm of the target coordinates.
-     * Combines Redis Geo distance results with driver profile details.
-     * CRITICAL: Only drivers who are currently 'Available' are returned.
-     */
     public List<NearbyDriverDto> findNearbyDrivers(Double latitude, Double longitude, Double radiusKm) {
         GeoResults<RedisGeoCommands.GeoLocation<Object>> geoResults =
                 driverLocationRedisService.findNearbyDrivers(latitude, longitude, radiusKm);
@@ -104,15 +113,31 @@ public class DriverService {
             return nearbyDrivers;
         }
 
+        List<Integer> driverIds = new ArrayList<>();
         for (GeoResult<RedisGeoCommands.GeoLocation<Object>> result : geoResults) {
-            String memberName = String.valueOf(result.getContent().getName());
             try {
-                Integer driverId = Integer.parseInt(memberName);
-                Optional<Driver> driverOpt = driverRepository.findById(driverId);
-                if (driverOpt.isPresent()) {
-                    Driver d = driverOpt.get();
+                driverIds.add(Integer.parseInt(String.valueOf(result.getContent().getName())));
+            } catch (NumberFormatException ignored) {}
+        }
 
-                    // FILTER: Only take drivers whose status is currently 'Available'
+        if (driverIds.isEmpty()) {
+            return nearbyDrivers;
+        }
+
+        List<Driver> drivers = driverRepository.findAllById(driverIds);
+
+        java.util.Map<Integer, Driver> driverMap = new java.util.HashMap<>();
+        for (Driver d : drivers) {
+            driverMap.put(d.getId(), d);
+        }
+
+        for (GeoResult<RedisGeoCommands.GeoLocation<Object>> result : geoResults) {
+            try {
+                Integer driverId = Integer.parseInt(String.valueOf(result.getContent().getName()));
+                Driver d = driverMap.get(driverId);
+
+                if (d != null) {
+
                     if (!"Available".equalsIgnoreCase(d.getStatus())) {
                         continue;
                     }
@@ -122,6 +147,10 @@ public class DriverService {
                             .setScale(2, RoundingMode.HALF_UP)
                             .doubleValue();
 
+                    org.springframework.data.geo.Point pt = result.getContent().getPoint();
+                    Double lat = (pt != null) ? pt.getY() : d.getCurrentLatitude();
+                    Double lng = (pt != null) ? pt.getX() : d.getCurrentLongitude();
+
                     NearbyDriverDto dto = NearbyDriverDto.builder()
                             .driverId(d.getId())
                             .name(d.getName())
@@ -129,14 +158,38 @@ public class DriverService {
                             .carType(d.getCarType())
                             .licensePlate(d.getLicensePlate())
                             .rating(d.getRating())
-                            .latitude(d.getCurrentLatitude())
-                            .longitude(d.getCurrentLongitude())
+                            .latitude(lat)
+                            .longitude(lng)
                             .distanceKm(roundedDistance)
                             .build();
 
                     nearbyDrivers.add(dto);
                 }
             } catch (NumberFormatException ignored) {
+            }
+        }
+
+        if (nearbyDrivers.isEmpty()) {
+            List<Driver> availableDrivers = driverRepository.findTop100ByStatus("Available");
+            for (Driver d : availableDrivers) {
+                double dist = 1.2;
+                if (d.getCurrentLatitude() != null && d.getCurrentLongitude() != null && latitude != null && longitude != null) {
+                    dist = geoDistanceService.calculateDistanceKm(latitude, longitude, d.getCurrentLatitude(), d.getCurrentLongitude());
+                }
+                double maxRadius = (radiusKm != null && radiusKm > 0) ? radiusKm : 10.0;
+                if (dist <= maxRadius) {
+                    nearbyDrivers.add(NearbyDriverDto.builder()
+                            .driverId(d.getId())
+                            .name(d.getName())
+                            .email(d.getEmail())
+                            .carType(d.getCarType())
+                            .licensePlate(d.getLicensePlate())
+                            .rating(d.getRating() != null ? d.getRating() : BigDecimal.valueOf(5.00))
+                            .latitude(d.getCurrentLatitude() != null ? d.getCurrentLatitude() : (latitude != null ? latitude : 13.0418))
+                            .longitude(d.getCurrentLongitude() != null ? d.getCurrentLongitude() : (longitude != null ? longitude : 80.2341))
+                            .distanceKm(dist)
+                            .build());
+                }
             }
         }
 

@@ -10,17 +10,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
-/**
- * WebSocketAuthInterceptor - intercepts STOMP frames over the WebSocket connection.
- *
- * WHY a ChannelInterceptor and NOT an HTTP Filter?
- *   The standard JwtAuthFilter only intercepts the initial HTTP upgrade handshake on /ws.
- *   Standard browser WebSocket APIs do not permit custom HTTP headers (like Authorization)
- *   during that handshake.
- *   Instead, the STOMP protocol sends a CONNECT frame immediately after the socket opens,
- *   which allows arbitrary headers. We intercept that STOMP CONNECT frame here, validate
- *   the JWT, and bind the authenticated Principal to the WebSocket session.
- */
 @Component
 public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
@@ -37,18 +26,17 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
         if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
-            // 1. Extract Authorization header from STOMP connect headers
+
             String authHeader = accessor.getFirstNativeHeader("Authorization");
             String token = null;
 
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 token = authHeader.substring(7);
             } else {
-                // Fallback: Check if client passed raw 'token' header
+
                 token = accessor.getFirstNativeHeader("token");
             }
 
-            // 2. Validate token and authenticate session Principal
             if (token != null && jwtUtil.isTokenValid(token)) {
                 String email = jwtUtil.extractEmail(token);
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
@@ -60,7 +48,6 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                                 userDetails.getAuthorities()
                         );
 
-                // Attach Principal to this WebSocket connection session
                 accessor.setUser(authentication);
                 System.out.println("🟢 [WebSocket Auth] Authenticated user: " + email + " (" + userDetails.getAuthorities() + ")");
             } else if (token != null) {

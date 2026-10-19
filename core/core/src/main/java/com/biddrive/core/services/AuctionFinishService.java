@@ -31,9 +31,6 @@ public class AuctionFinishService {
         this.auctionEventPublisher = auctionEventPublisher;
     }
 
-    /**
-     * Finalizes the auction when the 60-second Redis timer expires.
-     */
     @Transactional
     public void finalizeAuction(Integer rideId) {
         Optional<Ride> rideOpt = rideRepository.findById(rideId);
@@ -43,7 +40,6 @@ public class AuctionFinishService {
 
         Ride ride = rideOpt.get();
 
-        // Only process if the ride is still in INITIATED state
         if (!"INITIATED".equalsIgnoreCase(ride.getStatus())) {
             return;
         }
@@ -51,15 +47,14 @@ public class AuctionFinishService {
         List<Bid> bids = bidRepository.findByRideId(rideId);
 
         if (bids.isEmpty()) {
-            // No drivers submitted bids during the 60s window
+
             ride.setStatus("EXPIRED");
             rideRepository.save(ride);
             System.out.println("⏰ [Redis Auction Expired] Ride #" + rideId + " expired with NO bids.");
 
-            // Broadcast expiration over WebSockets
             auctionEventPublisher.publishAuctionExpired(ride);
         } else {
-            // Find the lowest bid
+
             Bid winningBid = bids.stream()
                     .min(Comparator.comparing(Bid::getBidAmount))
                     .orElse(bids.get(0));
@@ -67,11 +62,20 @@ public class AuctionFinishService {
             winningBid.setStatus("ACCEPTED_LOWEST");
             bidRepository.save(winningBid);
 
-            // Update Ride status to MATCHED
-            ride.setStatus("MATCHED");
-            rideRepository.save(ride);
+            for (Bid b : bids) {
+                if (!b.getId().equals(winningBid.getId())) {
+                    b.setStatus("REJECTED");
+                    bidRepository.save(b);
+                }
+            }
 
-            // Update winning Driver status to BUSY
+            String otp = String.format("%04d", new java.security.SecureRandom().nextInt(10000));
+            ride.setStatus("MATCHED");
+            ride.setDriverId(winningBid.getDriverId());
+            ride.setFinalFare(winningBid.getBidAmount());
+            ride.setOtp(otp);
+            Ride savedRide = rideRepository.save(ride);
+
             Optional<Driver> driverOpt = driverRepository.findById(winningBid.getDriverId());
             if (driverOpt.isPresent()) {
                 Driver driver = driverOpt.get();
@@ -79,12 +83,11 @@ public class AuctionFinishService {
                 driverRepository.save(driver);
             }
 
-            System.out.println("🏆 [Redis Auction Completed] Ride #" + rideId 
-                    + " MATCHED with Driver #" + winningBid.getDriverId() 
+            System.out.println("🏆 [Redis Auction Completed] Ride #" + rideId
+                    + " MATCHED with Driver #" + winningBid.getDriverId()
                     + " at lowest bid ₹" + winningBid.getBidAmount());
 
-            // Broadcast match over WebSockets and notify winning driver directly
-            auctionEventPublisher.publishAuctionMatched(ride, winningBid.getDriverId(), winningBid.getBidAmount());
+            auctionEventPublisher.publishAuctionMatched(savedRide, winningBid.getDriverId(), winningBid.getBidAmount());
         }
     }
 }

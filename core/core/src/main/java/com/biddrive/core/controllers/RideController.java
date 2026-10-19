@@ -6,22 +6,10 @@ import com.biddrive.core.services.RideService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
-/**
- * RideController - secured ride management endpoints.
- *
- * POST /api/rides is PASSENGER-only:
- *   A driver should never be able to create a ride request - they respond to rides with bids.
- *   The authenticated passenger's ID is extracted from the JWT and set server-side,
- *   preventing a passenger from creating a ride on behalf of another passenger.
- *
- * GET endpoints are open to any authenticated user:
- *   Both drivers (to see available rides to bid on) and passengers (to see their own rides)
- *   need read access. Fine-grained filtering (show driver only their bids, passenger only
- *   their rides) is a Milestone 2 feature.
- */
 @RestController
 @RequestMapping("/api/rides")
 public class RideController {
@@ -29,19 +17,18 @@ public class RideController {
     private final RideService rideService;
     private final JwtUtil jwtUtil;
     private final com.biddrive.core.services.GeoDistanceService geoDistanceService;
+    private final com.biddrive.core.repositories.DriverRepository driverRepository;
 
-    public RideController(RideService rideService, 
+    public RideController(RideService rideService,
                           JwtUtil jwtUtil,
-                          com.biddrive.core.services.GeoDistanceService geoDistanceService) {
+                          com.biddrive.core.services.GeoDistanceService geoDistanceService,
+                          com.biddrive.core.repositories.DriverRepository driverRepository) {
         this.rideService = rideService;
         this.jwtUtil = jwtUtil;
         this.geoDistanceService = geoDistanceService;
+        this.driverRepository = driverRepository;
     }
 
-    /**
-     * GET /api/rides/estimate
-     * Calculates distance and suggested base fare for given pickup and destination coordinates.
-     */
     @GetMapping("/estimate")
     public Map<String, Object> estimateRide(
             @RequestParam Double pickupLat,
@@ -56,13 +43,6 @@ public class RideController {
         );
     }
 
-    /**
-     * POST /api/rides
-     * Requires: Authorization: Bearer <PASSENGER_TOKEN>
-     *
-     * The passengerId in the request body is OVERWRITTEN with the authenticated
-     * passenger's ID from the JWT - same pattern as BidController.driverId.
-     */
     @PostMapping
     @PreAuthorize("hasRole('PASSENGER')")
     public Ride createRide(
@@ -72,21 +52,102 @@ public class RideController {
         String token = authHeader.substring(7);
         Integer authenticatedPassengerId = jwtUtil.extractUserId(token);
 
-        // SECURITY: Overwrite whatever passengerId the client sent
         ride.setPassengerId(authenticatedPassengerId);
 
         return rideService.createRide(ride);
     }
 
-    /** GET /api/rides - any authenticated user (drivers browse available rides) */
+    @PostMapping("/instant")
+    @PreAuthorize("hasRole('PASSENGER')")
+    public Ride createInstantRide(
+            @RequestBody Ride ride,
+            @RequestHeader("Authorization") String authHeader) {
+
+        String token = authHeader.substring(7);
+        Integer authenticatedPassengerId = jwtUtil.extractUserId(token);
+
+        ride.setPassengerId(authenticatedPassengerId);
+
+        return rideService.createInstantRide(ride);
+    }
+
+    @PostMapping("/{id}/retry-auction")
+    @PreAuthorize("hasRole('PASSENGER')")
+    public com.biddrive.core.dtos.RideResponseDto retryAuction(
+            @PathVariable Integer id,
+            @RequestParam(required = false) BigDecimal newBaseFare,
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        Integer passengerId = jwtUtil.extractUserId(token);
+        Ride ride = rideService.retryAuction(id, passengerId, newBaseFare);
+        return com.biddrive.core.dtos.RideResponseDto.fromEntity(ride, passengerId, "PASSENGER");
+    }
+
+    @PostMapping("/{id}/convert-to-instant")
+    @PreAuthorize("hasRole('PASSENGER')")
+    public com.biddrive.core.dtos.RideResponseDto convertToInstant(
+            @PathVariable Integer id,
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        Integer passengerId = jwtUtil.extractUserId(token);
+        Ride ride = rideService.convertToInstant(id, passengerId);
+        com.biddrive.core.models.Driver driver = ride.getDriverId() != null
+                ? driverRepository.findById(ride.getDriverId()).orElse(null) : null;
+        return com.biddrive.core.dtos.RideResponseDto.fromEntity(ride, driver, passengerId, "PASSENGER");
+    }
+
     @GetMapping
-    public List<Ride> getAllRides() {
-        return rideService.getAllRides();
+    public List<com.biddrive.core.dtos.RideResponseDto> getAllRides(
+            @RequestParam(required = false) String status,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        Integer userId = null;
+        String role = null;
+        String driverCarType = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            userId = jwtUtil.extractUserId(token);
+            role = jwtUtil.extractRole(token);
+
+            if ("DRIVER".equalsIgnoreCase(role)) {
+                driverCarType = driverRepository.findById(userId)
+                        .map(com.biddrive.core.models.Driver::getCarType).orElse(null);
+            }
+        }
+        final Integer finalUserId = userId;
+        final String finalRole = role;
+        return rideService.getRides(status, driverCarType).stream()
+                .map(r -> {
+                    com.biddrive.core.models.Driver driver = r.getDriverId() != null
+                            ? driverRepository.findById(r.getDriverId()).orElse(null) : null;
+                    com.biddrive.core.dtos.RideResponseDto dto = com.biddrive.core.dtos.RideResponseDto.fromEntity(r, driver, finalUserId, finalRole);
+                    if ("AUCTION".equalsIgnoreCase(r.getRideType()) && "INITIATED".equalsIgnoreCase(r.getStatus())) {
+                        dto.setRemainingSeconds(rideService.getRemainingSeconds(r.getId()));
+                    }
+                    return dto;
+                })
+                .toList();
     }
 
     @GetMapping("/{id}")
-    public Ride getRideById(@PathVariable Integer id) {
-        return rideService.getRideById(id).orElse(null);
+    public com.biddrive.core.dtos.RideResponseDto getRideById(
+            @PathVariable Integer id,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        Integer userId = null;
+        String role = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            userId = jwtUtil.extractUserId(token);
+            role = jwtUtil.extractRole(token);
+        }
+        final Integer finalUserId = userId;
+        final String finalRole = role;
+        return rideService.getRideById(id)
+                .map(r -> {
+                    com.biddrive.core.models.Driver driver = r.getDriverId() != null
+                            ? driverRepository.findById(r.getDriverId()).orElse(null) : null;
+                    return com.biddrive.core.dtos.RideResponseDto.fromEntity(r, driver, finalUserId, finalRole);
+                })
+                .orElse(null);
     }
 
     @GetMapping("/{id}/auction")
@@ -94,7 +155,28 @@ public class RideController {
         return rideService.getLiveAuction(id);
     }
 
-    /** DELETE /api/rides/{id} - PASSENGER only (they own the ride) */
+    @PostMapping("/{id}/simulate-bids")
+    public List<com.biddrive.core.models.Bid> simulateBids(@PathVariable Integer id) {
+        return rideService.simulateBids(id);
+    }
+
+    @PostMapping("/{id}/simulate-driver-step")
+    public com.biddrive.core.dtos.RideResponseDto simulateDriverStep(
+            @PathVariable Integer id,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        Ride ride = rideService.simulateDriverStep(id);
+        com.biddrive.core.models.Driver driver = ride.getDriverId() != null
+                ? driverRepository.findById(ride.getDriverId()).orElse(null) : null;
+        Integer userId = null;
+        String role = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            userId = jwtUtil.extractUserId(token);
+            role = jwtUtil.extractRole(token);
+        }
+        return com.biddrive.core.dtos.RideResponseDto.fromEntity(ride, driver, userId, role);
+    }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('PASSENGER')")
     public void deleteRide(
@@ -105,12 +187,67 @@ public class RideController {
         rideService.deleteRide(id, authenticatedPassengerId);
     }
 
-    /**
-     * PUT /api/rides/{id}/complete
-     * Finishes an active matched ride and automatically sets the assigned driver back to Available.
-     */
+    @PutMapping("/{id}/arriving")
+    @PreAuthorize("hasRole('DRIVER')")
+    public com.biddrive.core.dtos.RideResponseDto markArriving(
+            @PathVariable Integer id,
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        Integer driverId = jwtUtil.extractUserId(token);
+        String role = jwtUtil.extractRole(token);
+        Ride ride = rideService.markDriverArriving(id, driverId);
+        return com.biddrive.core.dtos.RideResponseDto.fromEntity(ride, driverId, role);
+    }
+
+    @PutMapping("/{id}/arrived")
+    @PreAuthorize("hasRole('DRIVER')")
+    public com.biddrive.core.dtos.RideResponseDto markArrived(
+            @PathVariable Integer id,
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        Integer driverId = jwtUtil.extractUserId(token);
+        String role = jwtUtil.extractRole(token);
+        Ride ride = rideService.markDriverArrived(id, driverId);
+        return com.biddrive.core.dtos.RideResponseDto.fromEntity(ride, driverId, role);
+    }
+
+    @PostMapping("/{id}/start")
+    @PreAuthorize("hasRole('DRIVER')")
+    public com.biddrive.core.dtos.RideResponseDto startTrip(
+            @PathVariable Integer id,
+            @jakarta.validation.Valid @RequestBody com.biddrive.core.dtos.StartRideRequestDto request,
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        Integer driverId = jwtUtil.extractUserId(token);
+        String role = jwtUtil.extractRole(token);
+        Ride ride = rideService.startTrip(id, driverId, request.getOtp());
+        return com.biddrive.core.dtos.RideResponseDto.fromEntity(ride, driverId, role);
+    }
+
     @PutMapping("/{id}/complete")
-    public Ride completeRide(@PathVariable Integer id) {
-        return rideService.completeRide(id);
+    @PreAuthorize("hasRole('DRIVER')")
+    public com.biddrive.core.dtos.RideResponseDto completeRide(
+            @PathVariable Integer id,
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        Integer driverId = jwtUtil.extractUserId(token);
+        String role = jwtUtil.extractRole(token);
+        Ride ride = rideService.completeRide(id, driverId);
+        return com.biddrive.core.dtos.RideResponseDto.fromEntity(ride, driverId, role);
+    }
+
+    @PutMapping("/{id}/cancel")
+    public com.biddrive.core.dtos.RideResponseDto cancelRide(
+            @PathVariable Integer id,
+            @RequestBody(required = false) com.biddrive.core.dtos.CancelRideRequestDto request,
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        Integer userId = jwtUtil.extractUserId(token);
+        String role = jwtUtil.extractRole(token);
+        String reason = (request != null) ? request.getCancellationReason() : null;
+        Ride ride = rideService.cancelRide(id, userId, role, reason);
+        com.biddrive.core.models.Driver driver = ride.getDriverId() != null
+                ? driverRepository.findById(ride.getDriverId()).orElse(null) : null;
+        return com.biddrive.core.dtos.RideResponseDto.fromEntity(ride, driver, userId, role);
     }
 }

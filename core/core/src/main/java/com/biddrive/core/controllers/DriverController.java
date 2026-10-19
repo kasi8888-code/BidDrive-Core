@@ -33,11 +33,6 @@ public class DriverController {
         return driverService.getDriverById(id).orElse(null);
     }
 
-    /**
-     * PUT /api/drivers/location
-     * Ingests real-time GPS coordinates for the authenticated driver.
-     * Uses JWT to securely resolve driverId (preventing driver impersonation).
-     */
     @PutMapping("/location")
     @PreAuthorize("hasRole('DRIVER')")
     public Driver updateLocation(
@@ -48,10 +43,6 @@ public class DriverController {
         return driverService.updateDriverLocation(authenticatedDriverId, dto.getLatitude(), dto.getLongitude());
     }
 
-    /**
-     * PUT /api/drivers/status
-     * Updates driver availability status (e.g. 'Available', 'BUSY', 'Offline').
-     */
     @PutMapping("/status")
     @PreAuthorize("hasRole('DRIVER')")
     public Driver updateStatus(
@@ -62,10 +53,6 @@ public class DriverController {
         return driverService.updateDriverStatus(authenticatedDriverId, status);
     }
 
-    /**
-     * GET /api/drivers/nearby
-     * Discovers active drivers within a radius (default: 5.0 km) of the specified coordinates.
-     */
     @GetMapping("/nearby")
     public List<NearbyDriverDto> getNearbyDrivers(
             @RequestParam Double latitude,

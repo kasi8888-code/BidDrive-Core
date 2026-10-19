@@ -12,9 +12,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/**
- * AuctionEventPublisher centralizes real-time messaging across WebSocket topics and user queues.
- */
 @Service
 public class AuctionEventPublisher {
 
@@ -33,10 +30,7 @@ public class AuctionEventPublisher {
         this.auctionRedisService = auctionRedisService;
     }
 
-    /**
-     * Broadcasts newly created ride to /topic/rides and sends targeted push alerts
-     * to each nearby driver's private queue (/user/{email}/queue/rides).
-     */
+    @org.springframework.scheduling.annotation.Async
     public void publishRideCreated(Ride ride, java.util.List<com.biddrive.core.dtos.NearbyDriverDto> nearbyDrivers) {
         Long remainingSeconds = auctionRedisService.getRemainingSeconds(ride.getId());
         AuctionEventDto event = AuctionEventDto.builder()
@@ -54,16 +48,13 @@ public class AuctionEventPublisher {
                 .status(ride.getStatus())
                 .remainingSeconds(remainingSeconds > 0 ? remainingSeconds : 180L)
                 .timestamp(LocalDateTime.now())
-                .message("New ride #" + ride.getId() + " requested from " 
-                        + ride.getPickupLocation() + " to " + ride.getDestinationLocation() 
+                .message("New ride #" + ride.getId() + " requested from "
+                        + ride.getPickupLocation() + " to " + ride.getDestinationLocation()
                         + " with base fare ₹" + ride.getBaseFare())
                 .build();
 
-        // 1. General topic for dashboard/global monitors
         messagingTemplate.convertAndSend("/topic/rides", event);
-        System.out.println("📢 [WebSocket Broadcast] New Ride posted to /topic/rides: Ride #" + ride.getId());
 
-        // 2. Targeted Geo-Dispatch: Send private alerts to each nearby driver within range
         if (nearbyDrivers != null && !nearbyDrivers.isEmpty()) {
             for (com.biddrive.core.dtos.NearbyDriverDto driver : nearbyDrivers) {
                 if (driver.getEmail() != null) {
@@ -83,14 +74,12 @@ public class AuctionEventPublisher {
                             .status(ride.getStatus())
                             .remainingSeconds(remainingSeconds > 0 ? remainingSeconds : 180L)
                             .timestamp(LocalDateTime.now())
-                            .message("🎯 Nearby Ride Alert! Ride #" + ride.getId() + " is " 
+                            .message("🎯 Nearby Ride Alert! Ride #" + ride.getId() + " is "
                                     + driver.getDistanceKm() + " km away from your current location.")
                             .build();
 
                     messagingTemplate.convertAndSendToUser(driver.getEmail(), "/queue/rides", targetedEvent);
-                    System.out.println("🎯 [Targeted Dispatch] Dispatched Ride #" + ride.getId() 
-                            + " to Driver " + driver.getName() + " (" + driver.getEmail() 
-                            + ", " + driver.getDistanceKm() + " km away)");
+
                 }
             }
         }
@@ -100,9 +89,7 @@ public class AuctionEventPublisher {
         publishRideCreated(ride, null);
     }
 
-    /**
-     * Broadcasts new lowest bid placed by a driver to all listeners on /topic/auction/{rideId}.
-     */
+    @org.springframework.scheduling.annotation.Async
     public void publishNewBid(Integer rideId, Integer bidId, Integer driverId, BigDecimal bidAmount) {
         String driverName = "Driver #" + driverId;
         Driver driver = driverRepository.findById(driverId).orElse(null);
@@ -124,14 +111,10 @@ public class AuctionEventPublisher {
                 .build();
 
         messagingTemplate.convertAndSend("/topic/auction/" + rideId, event);
-        System.out.println("📢 [WebSocket Broadcast] New Lowest Bid on /topic/auction/" + rideId 
-                + ": ₹" + bidAmount + " by " + driverName + " (bidId=" + bidId + ", TTL=" + remainingSeconds + "s)");
+
     }
 
-    /**
-     * Broadcasts auction match resolution (manual acceptance or timer expiry match).
-     * Also pushes direct targeted notifications to winning driver and passenger.
-     */
+    @org.springframework.scheduling.annotation.Async
     public void publishAuctionMatched(Ride ride, Integer winningDriverId, BigDecimal winningBidAmount) {
         String driverName = "Driver #" + winningDriverId;
         Driver driver = driverRepository.findById(winningDriverId).orElse(null);
@@ -153,10 +136,8 @@ public class AuctionEventPublisher {
                 .message("Ride #" + ride.getId() + " matched with " + driverName + " for ₹" + winningBidAmount)
                 .build();
 
-        // 1. Broadcast to everyone in the ride's auction room
         messagingTemplate.convertAndSend("/topic/auction/" + ride.getId(), event);
 
-        // 2. Private push notification to winning driver
         if (driver != null && driver.getEmail() != null) {
             AuctionEventDto driverNotification = AuctionEventDto.builder()
                     .eventType("RIDE_AWARDED")
@@ -170,10 +151,9 @@ public class AuctionEventPublisher {
                     .build();
 
             messagingTemplate.convertAndSendToUser(driver.getEmail(), "/queue/notifications", driverNotification);
-            System.out.println("🔔 [WebSocket Direct] Sent WIN notification to driver " + driver.getEmail());
+
         }
 
-        // 3. Private push notification to passenger
         Passenger passenger = passengerRepository.findById(ride.getPassengerId()).orElse(null);
         if (passenger != null && passenger.getEmail() != null) {
             AuctionEventDto passengerNotification = AuctionEventDto.builder()
@@ -182,19 +162,90 @@ public class AuctionEventPublisher {
                     .driverId(winningDriverId)
                     .driverName(driverName)
                     .lowestBid(winningBidAmount)
+                    .otp(ride.getOtp())
                     .status("MATCHED")
                     .timestamp(LocalDateTime.now())
-                    .message("Your ride #" + ride.getId() + " has been booked with " + driverName + " for ₹" + winningBidAmount)
+                    .message("Your ride #" + ride.getId() + " has been booked with " + driverName + " for ₹" + winningBidAmount + ". Your trip OTP is " + ride.getOtp() + " (share this with driver on boarding).")
                     .build();
 
             messagingTemplate.convertAndSendToUser(passenger.getEmail(), "/queue/notifications", passengerNotification);
-            System.out.println("🔔 [WebSocket Direct] Sent MATCH notification to passenger " + passenger.getEmail());
+
         }
     }
 
-    /**
-     * Broadcasts auction expiration when no bids were submitted during the window.
-     */
+    @org.springframework.scheduling.annotation.Async
+    public void publishDriverArriving(Ride ride, Driver driver) {
+        String driverName = driver != null && driver.getName() != null ? driver.getName() : "Driver #" + ride.getDriverId();
+        AuctionEventDto event = AuctionEventDto.builder()
+                .eventType("DRIVER_ARRIVING")
+                .rideId(ride.getId())
+                .driverId(ride.getDriverId())
+                .driverName(driverName)
+                .status("DRIVER_ARRIVING")
+                .timestamp(LocalDateTime.now())
+                .message(driverName + " is on the way to your pickup location.")
+                .build();
+
+        messagingTemplate.convertAndSend("/topic/auction/" + ride.getId(), event);
+
+        Passenger passenger = passengerRepository.findById(ride.getPassengerId()).orElse(null);
+        if (passenger != null && passenger.getEmail() != null) {
+            messagingTemplate.convertAndSendToUser(passenger.getEmail(), "/queue/notifications", event);
+        }
+
+    }
+
+    @org.springframework.scheduling.annotation.Async
+    public void publishDriverArrived(Ride ride, Driver driver) {
+        String driverName = driver != null && driver.getName() != null ? driver.getName() : "Driver #" + ride.getDriverId();
+        AuctionEventDto event = AuctionEventDto.builder()
+                .eventType("DRIVER_ARRIVED")
+                .rideId(ride.getId())
+                .driverId(ride.getDriverId())
+                .driverName(driverName)
+                .status("ARRIVED")
+                .timestamp(LocalDateTime.now())
+                .message(driverName + " has ARRIVED at your pickup point! Please board and share your OTP (" + ride.getOtp() + ") to start the trip.")
+                .build();
+
+        messagingTemplate.convertAndSend("/topic/auction/" + ride.getId(), event);
+
+        Passenger passenger = passengerRepository.findById(ride.getPassengerId()).orElse(null);
+        if (passenger != null && passenger.getEmail() != null) {
+            messagingTemplate.convertAndSendToUser(passenger.getEmail(), "/queue/notifications", event);
+        }
+
+    }
+
+    @org.springframework.scheduling.annotation.Async
+    public void publishTripStarted(Ride ride) {
+        AuctionEventDto event = AuctionEventDto.builder()
+                .eventType("TRIP_STARTED")
+                .rideId(ride.getId())
+                .passengerId(ride.getPassengerId())
+                .driverId(ride.getDriverId())
+                .status("IN_PROGRESS")
+                .timestamp(LocalDateTime.now())
+                .message("OTP verified successfully! Trip #" + ride.getId() + " is now IN_PROGRESS. Have a safe journey!")
+                .build();
+
+        messagingTemplate.convertAndSend("/topic/auction/" + ride.getId(), event);
+
+        Passenger passenger = passengerRepository.findById(ride.getPassengerId()).orElse(null);
+        if (passenger != null && passenger.getEmail() != null) {
+            messagingTemplate.convertAndSendToUser(passenger.getEmail(), "/queue/notifications", event);
+        }
+
+        if (ride.getDriverId() != null) {
+            Driver driver = driverRepository.findById(ride.getDriverId()).orElse(null);
+            if (driver != null && driver.getEmail() != null) {
+                messagingTemplate.convertAndSendToUser(driver.getEmail(), "/queue/notifications", event);
+            }
+        }
+
+    }
+
+    @org.springframework.scheduling.annotation.Async
     public void publishAuctionExpired(Ride ride) {
         AuctionEventDto event = AuctionEventDto.builder()
                 .eventType("AUCTION_EXPIRED")
@@ -207,22 +258,20 @@ public class AuctionEventPublisher {
 
         messagingTemplate.convertAndSend("/topic/auction/" + ride.getId(), event);
 
-        // Private push notification to passenger
         Passenger passenger = passengerRepository.findById(ride.getPassengerId()).orElse(null);
         if (passenger != null && passenger.getEmail() != null) {
             messagingTemplate.convertAndSendToUser(passenger.getEmail(), "/queue/notifications", event);
         }
-        System.out.println("📢 [WebSocket Broadcast] Ride #" + ride.getId() + " expired.");
+
     }
 
-    /**
-     * Broadcasts ride completion when the trip finishes.
-     */
+    @org.springframework.scheduling.annotation.Async
     public void publishRideCompleted(Ride ride) {
         AuctionEventDto event = AuctionEventDto.builder()
                 .eventType("RIDE_COMPLETED")
                 .rideId(ride.getId())
                 .passengerId(ride.getPassengerId())
+                .driverId(ride.getDriverId())
                 .status("COMPLETED")
                 .timestamp(LocalDateTime.now())
                 .message("Ride #" + ride.getId() + " has been COMPLETED. Driver is now Available.")
@@ -230,6 +279,47 @@ public class AuctionEventPublisher {
 
         messagingTemplate.convertAndSend("/topic/auction/" + ride.getId(), event);
         messagingTemplate.convertAndSend("/topic/rides", event);
-        System.out.println("📢 [WebSocket Broadcast] Ride #" + ride.getId() + " COMPLETED.");
+
+        Passenger passenger = passengerRepository.findById(ride.getPassengerId()).orElse(null);
+        if (passenger != null && passenger.getEmail() != null) {
+            messagingTemplate.convertAndSendToUser(passenger.getEmail(), "/queue/notifications", event);
+        }
+
+        if (ride.getDriverId() != null) {
+            Driver driver = driverRepository.findById(ride.getDriverId()).orElse(null);
+            if (driver != null && driver.getEmail() != null) {
+                messagingTemplate.convertAndSendToUser(driver.getEmail(), "/queue/notifications", event);
+            }
+        }
+
+    }
+
+    @org.springframework.scheduling.annotation.Async
+    public void publishTripCancelled(Ride ride, String reason, String cancelledBy) {
+        AuctionEventDto event = AuctionEventDto.builder()
+                .eventType("TRIP_CANCELLED")
+                .rideId(ride.getId())
+                .passengerId(ride.getPassengerId())
+                .driverId(ride.getDriverId())
+                .status("CANCELLED")
+                .timestamp(LocalDateTime.now())
+                .message("Ride #" + ride.getId() + " was CANCELLED by " + cancelledBy + (reason != null ? ": " + reason : "."))
+                .build();
+
+        messagingTemplate.convertAndSend("/topic/auction/" + ride.getId(), event);
+        messagingTemplate.convertAndSend("/topic/rides", event);
+
+        Passenger passenger = passengerRepository.findById(ride.getPassengerId()).orElse(null);
+        if (passenger != null && passenger.getEmail() != null) {
+            messagingTemplate.convertAndSendToUser(passenger.getEmail(), "/queue/notifications", event);
+        }
+
+        if (ride.getDriverId() != null) {
+            Driver driver = driverRepository.findById(ride.getDriverId()).orElse(null);
+            if (driver != null && driver.getEmail() != null) {
+                messagingTemplate.convertAndSendToUser(driver.getEmail(), "/queue/notifications", event);
+            }
+        }
+
     }
 }

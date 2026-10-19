@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BidDrive</string>
+    <string name="tagline">Real-Time Reverse-Auction Mobility</string>
+    <string name="role_passenger">Passenger</string>
+    <string name="role_driver">Driver</string>
+</resources>

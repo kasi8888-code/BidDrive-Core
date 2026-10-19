@@ -38,6 +38,10 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
 
 		<!-- ===== SECURITY ===== -->
 		<!-- Spring Security: Provides the entire security filter chain, AuthenticationManager, etc. -->
@@ -102,6 +106,37 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-websocket</artifactId>
+		</dependency>
+
+		<!-- ===== PHASE 8A: SWAGGER / OPENAPI DOCUMENTATION ===== -->
+		<!-- Auto-generates interactive API docs at /swagger-ui.html -->
+		<!-- No manual @Api annotations needed — reads @RestController automatically -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>2.8.8</version>
+		</dependency>
+
+		<!-- ===== PHASE 8B: FLYWAY DATABASE MIGRATIONS ===== -->
+		<!-- Replaces ddl-auto=update with versioned SQL migration scripts -->
+		<!-- Each schema change becomes a tracked, irreversible migration file -->
+		<!-- Prevents accidental column drops and makes DB changes auditable -->
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+
+		<!-- ===== PHASE 8D: REDIS LETTUCE CONNECTION POOL ===== -->
+		<!-- Without this on the classpath, spring.data.redis.lettuce.pool.* -->
+		<!-- properties are silently ignored and NO pooling occurs.           -->
+		<!-- commons-pool2 is the pool provider Lettuce delegates to.        -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-pool2</artifactId>
 		</dependency>
 
 	</dependencies>

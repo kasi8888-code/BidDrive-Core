@@ -11,12 +11,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-/**
- * DriverLocationRedisService manages real-time driver GPS coordinates in Redis.
- *
- * Uses Redis native Geospatial Sorted Sets (GEOADD, GEORADIUS / GEOSEARCH)
- * to achieve sub-millisecond proximity queries without hitting relational databases.
- */
 @Service
 public class DriverLocationRedisService {
 
@@ -28,23 +22,15 @@ public class DriverLocationRedisService {
         this.redisTemplate = redisTemplate;
     }
 
-    /**
-     * Updates or inserts the driver's current position in Redis.
-     * Note: Redis Geo commands take Longitude first, then Latitude (x, y).
-     */
     public void updateDriverLocation(Integer driverId, Double latitude, Double longitude) {
         if (driverId == null || latitude == null || longitude == null) {
             return;
         }
-        // x = longitude, y = latitude
+
         Point location = new Point(longitude, latitude);
         redisTemplate.opsForGeo().add(DRIVERS_GEO_KEY, location, String.valueOf(driverId));
     }
 
-    /**
-     * Searches for active drivers within a circular radius of the pickup location.
-     * Results include coordinates and distance, sorted ascending (nearest drivers first).
-     */
     public GeoResults<RedisGeoCommands.GeoLocation<Object>> findNearbyDrivers(Double pickupLat, Double pickupLng, Double radiusKm) {
         if (pickupLat == null || pickupLng == null) {
             return null;
@@ -59,14 +45,12 @@ public class DriverLocationRedisService {
         RedisGeoCommands.GeoRadiusCommandArgs args = RedisGeoCommands.GeoRadiusCommandArgs.newGeoRadiusArgs()
                 .includeDistance()
                 .includeCoordinates()
-                .sortAscending();
+                .sortAscending()
+                .limit(100);
 
         return redisTemplate.opsForGeo().radius(DRIVERS_GEO_KEY, searchArea, args);
     }
 
-    /**
-     * Fetches the current location of a driver if present in Redis.
-     */
     public Point getDriverLocation(Integer driverId) {
         if (driverId == null) {
             return null;
@@ -78,10 +62,6 @@ public class DriverLocationRedisService {
         return null;
     }
 
-    /**
-     * Removes a driver from the active geospatial index (e.g. when going offline).
-     * Redis GEO structures are Sorted Sets (ZSET) internally.
-     */
     public void removeDriverLocation(Integer driverId) {
         if (driverId != null) {
             redisTemplate.opsForZSet().remove(DRIVERS_GEO_KEY, String.valueOf(driverId));

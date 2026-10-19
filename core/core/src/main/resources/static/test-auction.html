@@ -266,6 +266,78 @@
         .log-type-info {
             color: #94a3b8;
         }
+
+        /* Phase 6: Lifecycle Stepper & OTP Box Styles */
+        .stepper-container {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+            margin: 16px 0 24px;
+            text-align: center;
+        }
+
+        .step-item {
+            flex: 1;
+            position: relative;
+            z-index: 1;
+        }
+
+        .step-circle {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #1f2937;
+            border: 2px solid #4b5563;
+            color: #9ca3af;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 6px;
+            font-size: 13px;
+            font-weight: 700;
+            transition: all 0.3s ease;
+        }
+
+        .step-label {
+            font-size: 11px;
+            color: #9ca3af;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .step-item.active .step-circle {
+            background: #3b82f6;
+            border-color: #60a5fa;
+            color: #ffffff;
+            box-shadow: 0 0 14px rgba(59, 130, 246, 0.7);
+            transform: scale(1.1);
+        }
+
+        .step-item.active .step-label {
+            color: #60a5fa;
+            font-weight: 700;
+        }
+
+        .step-item.completed .step-circle {
+            background: #10b981;
+            border-color: #34d399;
+            color: #ffffff;
+        }
+
+        .step-item.completed .step-label {
+            color: #34d399;
+        }
+
+        .step-item.cancelled .step-circle {
+            background: #ef4444;
+            border-color: #f87171;
+            color: #ffffff;
+        }
+
+        .step-item.cancelled .step-label {
+            color: #f87171;
+        }
     </style>
 </head>
 <body>
@@ -366,6 +438,91 @@
             <div style="margin-top: 10px;">
                 <button id="completeRideBtn" class="btn-success" style="display: none; padding: 7px 16px; font-size: 13px; font-weight: 700; background: linear-gradient(135deg, #10b981, #059669);" onclick="completeActiveRide()">
                     🏁 Complete Trip & Free Driver (PUT /api/rides/{id}/complete)
+                </button>
+            </div>
+        </div>
+
+        <!-- Phase 6: Active Ride Lifecycle & Trip OTP Verification Panel -->
+        <div class="card" id="lifecycleCard" style="margin-bottom: 24px; border: 1px solid #3b82f6; background: rgba(30, 41, 59, 0.7);">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <span>🚗 Phase 6: Active Ride Lifecycle & Trip Security</span>
+                <span id="lifecycleStatusBadge" style="font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 12px; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4);">
+                    STATUS: INITIATED
+                </span>
+            </div>
+
+            <!-- Stepper Progress Bar -->
+            <div class="stepper-container">
+                <div class="step-item active" id="step-INITIATED">
+                    <div class="step-circle">1</div>
+                    <div class="step-label">Initiated</div>
+                </div>
+                <div class="step-item" id="step-MATCHED">
+                    <div class="step-circle">2</div>
+                    <div class="step-label">Matched</div>
+                </div>
+                <div class="step-item" id="step-DRIVER_ARRIVING">
+                    <div class="step-circle">3</div>
+                    <div class="step-label">Arriving</div>
+                </div>
+                <div class="step-item" id="step-ARRIVED">
+                    <div class="step-circle">4</div>
+                    <div class="step-label">Arrived</div>
+                </div>
+                <div class="step-item" id="step-IN_PROGRESS">
+                    <div class="step-circle">5</div>
+                    <div class="step-label">In Progress</div>
+                </div>
+                <div class="step-item" id="step-COMPLETED">
+                    <div class="step-circle">6</div>
+                    <div class="step-label">Completed</div>
+                </div>
+            </div>
+
+            <!-- Passenger OTP Security Box (Displayed on Match to Passenger) -->
+            <div id="passengerOtpBox" style="display: none; background: rgba(16, 185, 129, 0.1); border: 2px dashed #10b981; border-radius: 10px; padding: 16px; margin-bottom: 16px; text-align: center;">
+                <div style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #10b981; margin-bottom: 6px;">
+                    🛡️ Secure Passenger Boarding OTP
+                </div>
+                <div id="passengerOtpDisplay" style="font-size: 38px; font-weight: 800; letter-spacing: 6px; color: #34d399; font-family: monospace;">
+                    ----
+                </div>
+                <div style="font-size: 13px; color: #9ca3af; margin-top: 4px;">
+                    Share this 4-digit code verbally with your driver when boarding. Driver must enter it to start the trip.
+                </div>
+            </div>
+
+            <!-- Driver Action Controls -->
+            <div id="driverLifecycleControls" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                <div style="font-size: 13px; font-weight: 700; color: #f59e0b; margin-bottom: 10px;">
+                    🚖 Driver Trip Progression Actions:
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <button id="btnArriving" class="btn-primary" style="padding: 7px 14px; font-size: 13px;" onclick="markDriverArriving()">
+                        🚗 1. Mark On My Way (En Route)
+                    </button>
+                    <button id="btnArrived" class="btn-primary" style="padding: 7px 14px; font-size: 13px; background: #8b5cf6;" onclick="markDriverArrived()">
+                        📍 2. Mark Arrived at Pickup
+                    </button>
+                    <div style="display: inline-flex; gap: 6px; align-items: center;">
+                        <input type="text" id="driverOtpInput" maxlength="6" placeholder="Enter OTP" style="width: 110px; padding: 6px 10px; font-size: 14px; font-weight: 700; letter-spacing: 2px; text-align: center; border: 1px solid var(--border); border-radius: 6px; background: #0b0f19; color: #fff;">
+                        <button id="btnStartTrip" class="btn-success" style="padding: 7px 14px; font-size: 13px;" onclick="verifyOtpAndStartTrip()">
+                            🔑 3. Verify OTP & Start Trip
+                        </button>
+                    </div>
+                    <button id="btnCompleteTrip" class="btn-success" style="padding: 7px 14px; font-size: 13px; background: #059669;" onclick="completeActiveRide()">
+                        🏁 4. Complete Trip
+                    </button>
+                </div>
+            </div>
+
+            <!-- Cancellation Bar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);">
+                <div style="font-size: 13px; color: var(--text-secondary);">
+                    Trip Cancellation: Allowed prior to trip start. Reverts driver to Available.
+                </div>
+                <button class="btn-secondary" style="padding: 5px 12px; font-size: 12px; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" onclick="cancelActiveRide()">
+                    ❌ Cancel Ride
                 </button>
             </div>
         </div>
@@ -685,12 +842,18 @@
                     showNewRideAlert(event);
                 });
 
-                // Subscribe to private notifications queue (Wins, Matches, Expiries)
+                // Subscribe to private notifications queue (Wins, Matches, Expiries, OTP, Lifecycle)
                 stompClient.subscribe('/user/queue/notifications', function (message) {
                     const event = JSON.parse(message.body);
                     log("NOTIF", `🔔 DIRECT ALERT: ${event.message}`);
                     if (event.eventType === "RIDE_AWARDED") {
                         alert("🎉 YOU WON THE RIDE! Fare: ₹" + event.lowestBid);
+                    }
+                    if (event.otp) {
+                        displayPassengerOtp(event.otp);
+                    }
+                    if (event.status) {
+                        updateLifecycleStatus(event.status);
                     }
                 });
 
@@ -778,13 +941,17 @@
                 if (res.ok) {
                     const ride = await parseSafeResponse(res);
                     if (ride && ride.baseFare) {
-                        bidDisplay.innerText = "₹ " + ride.baseFare;
-                        bidDetails.innerText = `Status: ${ride.status}. Starting Base Fare: ₹${ride.baseFare}`;
+                        bidDisplay.innerText = "₹ " + (ride.finalFare || ride.baseFare);
+                        bidDetails.innerText = `Status: ${ride.status}. Starting Base Fare: ₹${ride.baseFare}` + (ride.finalFare ? ` | Agreed Fare: ₹${ride.finalFare}` : '');
                         if (ride.status === "INITIATED") {
                             startCountdown(180);
                             if (bidInput) bidInput.value = Math.max(10, ride.baseFare - 10);
                         } else {
                             stopCountdown(ride.status);
+                        }
+                        updateLifecycleStatus(ride.status);
+                        if (ride.otp) {
+                            displayPassengerOtp(ride.otp);
                         }
                     }
                 }
@@ -810,7 +977,7 @@
             }
 
             log("WS", `Subscribing to /topic/auction/${rideId}...`);
-            // Immediately query the server so the screen displays the actual base fare!
+            // Immediately query the server so the screen displays the actual base fare & lifecycle state!
             fetchInitialAuctionState(rideId);
 
             currentAuctionSubscription = stompClient.subscribe(`/topic/auction/${rideId}`, function (message) {
@@ -898,15 +1065,32 @@
                 log("MATCH", `🏆 ${event.message}`);
                 const incomingBox = document.getElementById("incomingBidsContainer");
                 if (incomingBox) incomingBox.style.display = "none";
-                const completeBtn = document.getElementById("completeRideBtn");
-                if (completeBtn) completeBtn.style.display = "inline-block";
+                updateLifecycleStatus("MATCHED");
+            } else if (event.eventType === "DRIVER_ARRIVING") {
+                log("DRIVER", `🚗 ${event.message}`);
+                bidDetails.innerText = `Driver en route to pickup.`;
+                updateLifecycleStatus("DRIVER_ARRIVING");
+            } else if (event.eventType === "DRIVER_ARRIVED") {
+                log("DRIVER", `📍 ${event.message}`);
+                bidDetails.innerText = `Driver has arrived at pickup point!`;
+                updateLifecycleStatus("ARRIVED");
+            } else if (event.eventType === "TRIP_STARTED") {
+                log("RIDE", `🚀 ${event.message}`);
+                bidDisplay.innerText = "IN PROGRESS 🚗💨";
+                bidDetails.innerText = `Trip is ongoing. Safe travels!`;
+                updateLifecycleStatus("IN_PROGRESS");
             } else if (event.eventType === "RIDE_COMPLETED") {
                 stopCountdown("COMPLETED 🏁");
                 bidDisplay.innerText = "COMPLETED 🏁";
                 bidDetails.innerText = "Trip has ended. Assigned driver is now Available.";
                 log("RIDE", `🏁 ${event.message}`);
-                const completeBtn = document.getElementById("completeRideBtn");
-                if (completeBtn) completeBtn.style.display = "none";
+                updateLifecycleStatus("COMPLETED");
+            } else if (event.eventType === "TRIP_CANCELLED") {
+                stopCountdown("CANCELLED 🛑");
+                bidDisplay.innerText = "CANCELLED 🛑";
+                bidDetails.innerText = event.message;
+                log("EXPIRE", `🛑 ${event.message}`);
+                updateLifecycleStatus("CANCELLED");
             } else if (event.eventType === "AUCTION_EXPIRED") {
                 stopCountdown("EXPIRED ⏰");
                 bidDisplay.innerText = "EXPIRED";
@@ -914,8 +1098,7 @@
                 log("EXPIRE", `⏰ ${event.message}`);
                 const incomingBox = document.getElementById("incomingBidsContainer");
                 if (incomingBox) incomingBox.style.display = "none";
-                const completeBtn = document.getElementById("completeRideBtn");
-                if (completeBtn) completeBtn.style.display = "none";
+                updateLifecycleStatus("EXPIRED");
             }
         }
 
@@ -991,6 +1174,196 @@
                     document.getElementById("connectionText").innerText = "Disconnected";
                     log("WS", "Disconnected from WebSocket.");
                 });
+            }
+        }
+
+        // =====================================================================
+        // PHASE 6: LIFECYCLE & OTP VERIFICATION JAVASCRIPT FUNCTIONS
+        // =====================================================================
+        const LIFECYCLE_STEPS = ["INITIATED", "MATCHED", "DRIVER_ARRIVING", "ARRIVED", "IN_PROGRESS", "COMPLETED"];
+
+        function updateLifecycleStatus(status) {
+            if (!status) return;
+            const badge = document.getElementById("lifecycleStatusBadge");
+            if (badge) {
+                badge.innerText = `STATUS: ${status}`;
+                if (status === "COMPLETED") {
+                    badge.style.color = "#34d399";
+                    badge.style.background = "rgba(16, 185, 129, 0.2)";
+                    badge.style.borderColor = "rgba(16, 185, 129, 0.4)";
+                } else if (status === "CANCELLED" || status === "EXPIRED") {
+                    badge.style.color = "#f87171";
+                    badge.style.background = "rgba(239, 68, 68, 0.2)";
+                    badge.style.borderColor = "rgba(239, 68, 68, 0.4)";
+                } else {
+                    badge.style.color = "#60a5fa";
+                    badge.style.background = "rgba(59, 130, 246, 0.2)";
+                    badge.style.borderColor = "rgba(59, 130, 246, 0.4)";
+                }
+            }
+
+            // Update Stepper Visual Circles
+            const currentIndex = LIFECYCLE_STEPS.indexOf(status);
+            LIFECYCLE_STEPS.forEach((step, idx) => {
+                const el = document.getElementById("step-" + step);
+                if (!el) return;
+                el.classList.remove("active", "completed", "cancelled");
+                if (status === "CANCELLED") {
+                    el.classList.add("cancelled");
+                } else if (currentIndex > -1) {
+                    if (idx < currentIndex) {
+                        el.classList.add("completed");
+                    } else if (idx === currentIndex) {
+                        el.classList.add("active");
+                    }
+                }
+            });
+
+            // Adjust button states based on lifecycle stage
+            const btnArriving = document.getElementById("btnArriving");
+            const btnArrived = document.getElementById("btnArrived");
+            const btnStartTrip = document.getElementById("btnStartTrip");
+            const btnCompleteTrip = document.getElementById("btnCompleteTrip");
+
+            if (btnArriving) btnArriving.disabled = (status !== "MATCHED");
+            if (btnArrived) btnArrived.disabled = (status !== "DRIVER_ARRIVING" && status !== "MATCHED");
+            if (btnStartTrip) btnStartTrip.disabled = (status !== "ARRIVED" && status !== "DRIVER_ARRIVING");
+            if (btnCompleteTrip) btnCompleteTrip.disabled = (status !== "IN_PROGRESS");
+        }
+
+        function displayPassengerOtp(otp) {
+            const box = document.getElementById("passengerOtpBox");
+            const display = document.getElementById("passengerOtpDisplay");
+            if (box && display && otp) {
+                display.innerText = otp;
+                box.style.display = "block";
+            }
+        }
+
+        async function markDriverArriving() {
+            if (!activeToken) { alert("Please authenticate as a DRIVER first."); return; }
+            const rideId = document.getElementById("monitorRideId").value;
+            log("ACTION", `Driver marking en route to pickup for Ride #${rideId}...`);
+            try {
+                const res = await fetch(`/api/rides/${rideId}/arriving`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': 'Bearer ' + activeToken }
+                });
+                const data = await parseSafeResponse(res);
+                if (res.ok) {
+                    log("DRIVER", `🚗 En route to pickup! Status: DRIVER_ARRIVING`);
+                    updateLifecycleStatus("DRIVER_ARRIVING");
+                } else {
+                    log("ERROR", `Failed to mark arriving: ${data.message || data.error}`);
+                }
+            } catch (e) {
+                log("ERROR", `Error marking arriving: ${e.message}`);
+            }
+        }
+
+        async function markDriverArrived() {
+            if (!activeToken) { alert("Please authenticate as a DRIVER first."); return; }
+            const rideId = document.getElementById("monitorRideId").value;
+            log("ACTION", `Driver marking arrival at pickup for Ride #${rideId}...`);
+            try {
+                const res = await fetch(`/api/rides/${rideId}/arrived`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': 'Bearer ' + activeToken }
+                });
+                const data = await parseSafeResponse(res);
+                if (res.ok) {
+                    log("DRIVER", `📍 Arrived at passenger pickup location! Status: ARRIVED`);
+                    updateLifecycleStatus("ARRIVED");
+                } else {
+                    log("ERROR", `Failed to mark arrived: ${data.message || data.error}`);
+                }
+            } catch (e) {
+                log("ERROR", `Error marking arrived: ${e.message}`);
+            }
+        }
+
+        async function verifyOtpAndStartTrip() {
+            if (!activeToken) { alert("Please authenticate as a DRIVER first."); return; }
+            const rideId = document.getElementById("monitorRideId").value;
+            const otpInput = document.getElementById("driverOtpInput");
+            const enteredOtp = otpInput ? otpInput.value.trim() : "";
+            if (!enteredOtp) {
+                alert("Please ask passenger for their 4-digit OTP and enter it here.");
+                return;
+            }
+
+            log("ACTION", `Driver verifying OTP [${enteredOtp}] to start Ride #${rideId}...`);
+            try {
+                const res = await fetch(`/api/rides/${rideId}/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + activeToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ otp: enteredOtp })
+                });
+                const data = await parseSafeResponse(res);
+                if (res.ok) {
+                    log("MATCH", `🎉 OTP Verified! Trip #${rideId} is now IN_PROGRESS.`);
+                    updateLifecycleStatus("IN_PROGRESS");
+                    if (otpInput) otpInput.value = "";
+                } else {
+                    log("ERROR", `❌ OTP Verification Failed: ${data.message || data.error}`);
+                    alert(`OTP Error: ${data.message || data.error || 'Invalid OTP'}`);
+                }
+            } catch (e) {
+                log("ERROR", `Error verifying OTP: ${e.message}`);
+            }
+        }
+
+        async function completeActiveRide() {
+            if (!activeToken) { alert("Please authenticate as a DRIVER first."); return; }
+            const rideId = document.getElementById("monitorRideId").value;
+            if (!confirm(`Complete Ride #${rideId}? This will end the trip and mark you as Available.`)) return;
+
+            log("ACTION", `Completing Ride #${rideId}...`);
+            try {
+                const res = await fetch(`/api/rides/${rideId}/complete`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': 'Bearer ' + activeToken }
+                });
+                const data = await parseSafeResponse(res);
+                if (res.ok) {
+                    log("RIDE", `🏁 Trip #${rideId} marked as COMPLETED. Driver returned to Available status.`);
+                    updateLifecycleStatus("COMPLETED");
+                } else {
+                    log("ERROR", `Failed to complete ride: ${data.message || data.error}`);
+                }
+            } catch (e) {
+                log("ERROR", `Error completing ride: ${e.message}`);
+            }
+        }
+
+        async function cancelActiveRide() {
+            if (!activeToken) { alert("Please authenticate first."); return; }
+            const rideId = document.getElementById("monitorRideId").value;
+            const reason = prompt("Enter cancellation reason:", "Plans changed");
+            if (reason === null) return;
+
+            log("ACTION", `Cancelling Ride #${rideId}...`);
+            try {
+                const res = await fetch(`/api/rides/${rideId}/cancel`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + activeToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ cancellationReason: reason })
+                });
+                const data = await parseSafeResponse(res);
+                if (res.ok) {
+                    log("EXPIRE", `🛑 Ride #${rideId} successfully CANCELLED.`);
+                    updateLifecycleStatus("CANCELLED");
+                } else {
+                    log("ERROR", `Failed to cancel ride: ${data.message || data.error}`);
+                }
+            } catch (e) {
+                log("ERROR", `Error cancelling ride: ${e.message}`);
             }
         }
 

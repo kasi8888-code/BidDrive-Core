@@ -22,71 +22,50 @@ public class BidService {
     private final AuctionRedisService auctionRedisService;
     private final AuctionEventPublisher auctionEventPublisher;
 
-    public BidService(BidRepository bidRepository, 
-                      RideRepository rideRepository, 
+    private final DriverService driverService;
+
+    public BidService(BidRepository bidRepository,
+                      RideRepository rideRepository,
                       DriverRepository driverRepository,
                       AuctionRedisService auctionRedisService,
-                      AuctionEventPublisher auctionEventPublisher) {
+                      AuctionEventPublisher auctionEventPublisher,
+                      DriverService driverService) {
         this.bidRepository = bidRepository;
         this.rideRepository = rideRepository;
         this.driverRepository = driverRepository;
         this.auctionRedisService = auctionRedisService;
         this.auctionEventPublisher = auctionEventPublisher;
+        this.driverService = driverService;
     }
 
     public Bid createBid(Bid bid) {
-        // 1. Check if Ride exists
-        Ride ride = rideRepository.findById(bid.getRideId())
+        if (bid.getBidAmount() == null) {
+            throw new RuntimeException("Bid amount is required.");
+        }
+
+        if (!driverService.isDriverAvailable(bid.getDriverId())) {
+            throw new RuntimeException("Driver is not available to place bids.");
+        }
+
+        com.biddrive.core.models.Ride ride = rideRepository.findById(bid.getRideId())
                 .orElseThrow(() -> new RuntimeException("Ride not found with id: " + bid.getRideId()));
-
-        // 2. Check if Driver exists
-        Driver driver = driverRepository.findById(bid.getDriverId())
+        com.biddrive.core.models.Driver driver = driverRepository.findById(bid.getDriverId())
                 .orElseThrow(() -> new RuntimeException("Driver not found with id: " + bid.getDriverId()));
-
-        // 3. Rule: Driver must be Available
-        if (!"Available".equalsIgnoreCase(driver.getStatus())) {
-            // Check if driver is ACTUALLY driving an ongoing MATCHED ride
-            boolean isCurrentlyDriving = hasActiveMatchedTrip(driver.getId());
-            if (!isCurrentlyDriving) {
-                // Self-healing: previous test or expired auction left driver in BUSY state. Automatically recover!
-                driver.setStatus("Available");
-                driver = driverRepository.save(driver);
-            } else {
-                throw new RuntimeException("Driver is currently on an active trip and cannot place bids.");
-            }
+        if (!com.biddrive.core.services.RideService.isVehicleCompatible(ride.getVehicleType(), driver.getCarType())) {
+            throw new RuntimeException("Vehicle mismatch: Your vehicle (" + driver.getCarType()
+                    + ") is not compatible with this ride's requested category (" + ride.getVehicleType() + ").");
         }
 
-        // 4. Rule: Ride must be INITIATED (active auction)
-        if (!"INITIATED".equalsIgnoreCase(ride.getStatus())) {
-            throw new RuntimeException("Ride #" + ride.getId() + " is no longer open for bidding (Current status: " + ride.getStatus() + "). Please create a new ride or ensure you bid before the auction expires.");
-        }
-
-        // 5. Rule: Max allowed fare = baseFare + 100
-        BigDecimal maxAllowedFare = ride.getBaseFare().add(BigDecimal.valueOf(100));
-
-        if (bid.getBidAmount() == null 
-                || bid.getBidAmount().compareTo(BigDecimal.ZERO) <= 0 
-                || bid.getBidAmount().compareTo(maxAllowedFare) > 0) {
-            throw new RuntimeException("Bid amount must be greater than 0 and cannot exceed max allowed fare of ₹" + maxAllowedFare + " (Base Fare + ₹100).");
-        }
-
-        // 6. Submit live bid to Redis In-Memory Engine (Atomically compares against lowest bid)
         auctionRedisService.submitLiveBid(bid.getRideId(), bid.getDriverId(), bid.getBidAmount());
 
         bid.setStatus("ACCEPTED_LOWEST");
         Bid savedBid = bidRepository.save(bid);
 
-        // 7. Broadcast new lowest bid over WebSockets (including bidId and remaining TTL)
         auctionEventPublisher.publishNewBid(savedBid.getRideId(), savedBid.getId(), savedBid.getDriverId(), savedBid.getBidAmount());
 
         return savedBid;
     }
 
-
-    /**
-     * Passenger accepts a specific driver's bid.
-     * Enforces ownership: only the passenger who created the ride can accept bids for it.
-     */
     @Transactional
     public Bid acceptBid(Integer bidId, Integer authenticatedPassengerId) {
         Bid acceptedBid = bidRepository.findById(bidId)
@@ -95,7 +74,6 @@ public class BidService {
         Ride ride = rideRepository.findById(acceptedBid.getRideId())
                 .orElseThrow(() -> new RuntimeException("Ride not found"));
 
-        // IDOR Protection: Verify authenticated passenger owns this ride
         if (!ride.getPassengerId().equals(authenticatedPassengerId)) {
             throw new RuntimeException("Access Denied: You do not own the ride associated with this bid.");
         }
@@ -107,11 +85,9 @@ public class BidService {
             throw new RuntimeException("Ride is no longer active for booking.");
         }
 
-        // 1. Accept this bid
         acceptedBid.setStatus("ACCEPTED");
         bidRepository.save(acceptedBid);
 
-        // 2. Reject all other bids for this ride
         List<Bid> otherBids = bidRepository.findByRideId(ride.getId());
         for (Bid b : otherBids) {
             if (!b.getId().equals(acceptedBid.getId())) {
@@ -120,18 +96,18 @@ public class BidService {
             }
         }
 
-        // 3. Update Ride status to MATCHED
+        String otp = String.format("%04d", new java.security.SecureRandom().nextInt(10000));
         ride.setStatus("MATCHED");
+        ride.setDriverId(driver.getId());
+        ride.setFinalFare(acceptedBid.getBidAmount());
+        ride.setOtp(otp);
         rideRepository.save(ride);
 
-        // 4. Update Driver status to BUSY
         driver.setStatus("BUSY");
         driverRepository.save(driver);
 
-        // 5. Close / delete the active Redis auction key
         auctionRedisService.closeAuction(ride.getId());
 
-        // 6. Broadcast auction match over WebSockets and notify winning driver directly
         auctionEventPublisher.publishAuctionMatched(ride, driver.getId(), acceptedBid.getBidAmount());
 
         return acceptedBid;
@@ -150,16 +126,6 @@ public class BidService {
     }
 
     private boolean hasActiveMatchedTrip(Integer driverId) {
-        List<Bid> bids = bidRepository.findByDriverId(driverId);
-        for (Bid b : bids) {
-            if ("ACCEPTED".equalsIgnoreCase(b.getStatus())) {
-                Optional<Ride> r = rideRepository.findById(b.getRideId());
-                if (r.isPresent() && "MATCHED".equalsIgnoreCase(r.get().getStatus())) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return bidRepository.hasActiveMatchedTrip(driverId);
     }
 }
-
