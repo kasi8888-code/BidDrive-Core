@@ -54,12 +54,21 @@ export default function () {
     role:        'PASSENGER',
   }), { headers: JSON_HEADERS });
 
+  const pReg = JSON.parse(passengerRegisterRes.body);
+  let passengerToken = pReg.token;
+  if (!passengerToken && pReg.testOtp) {
+    const vRes = http.post(`${BASE_URL}/api/auth/verify-otp`, JSON.stringify({
+      email: pReg.email,
+      otp: pReg.testOtp,
+    }), { headers: JSON_HEADERS });
+    passengerToken = JSON.parse(vRes.body).token;
+  }
+
   check(passengerRegisterRes, {
     'STEP 1: passenger register → 201': (r) => r.status === 201,
-    'STEP 1: got JWT token':             (r) => JSON.parse(r.body).token !== undefined,
+    'STEP 1: got JWT token':             () => passengerToken !== undefined && passengerToken !== null,
   });
 
-  const passengerToken = JSON.parse(passengerRegisterRes.body).token;
   sleep(0.5);
 
   // ── Step 2: Register Driver ──────────────────────────────────────────────
@@ -80,12 +89,23 @@ export default function () {
     carType:      'Sedan',
   }), { headers: JSON_HEADERS });
 
+  const dReg = JSON.parse(driverRegisterRes.body);
+  let driverToken = dReg.token;
+  if (!driverToken && dReg.testOtp) {
+    const vRes = http.post(`${BASE_URL}/api/auth/verify-otp`, JSON.stringify({
+      email: dReg.email,
+      otp: dReg.testOtp,
+    }), { headers: JSON_HEADERS });
+    driverToken = JSON.parse(vRes.body).token;
+  }
+
   check(driverRegisterRes, {
     'STEP 2: driver register → 201':  (r) => r.status === 201,
-    'STEP 2: driver role in response': (r) => JSON.parse(r.body).role === 'DRIVER',
+    'STEP 2: driver role in response': () => dReg.role === 'DRIVER',
   });
 
-  const driverToken = JSON.parse(driverRegisterRes.body).token;
+  // Ensure Driver is Available
+  http.put(`${BASE_URL}/api/drivers/status?status=Available`, null, { headers: authHeaders(driverToken) });
   sleep(0.5);
 
   // ── Step 3: Driver updates GPS location ──────────────────────────────────
@@ -108,6 +128,8 @@ export default function () {
     destinationLatitude:  12.9784,
     destinationLongitude: 77.6408,
     baseFare:             120.00,
+    vehicleType:          'Sedan',
+    rideType:             'AUCTION',
   }), { headers: authHeaders(passengerToken) });
 
   check(rideRes, {

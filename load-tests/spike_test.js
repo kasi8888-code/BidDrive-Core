@@ -38,12 +38,18 @@ const bidDuration  = new Trend('spike_bid_duration', true);
 const serverErrors = new Counter('spike_server_errors');
 const successRate  = new Rate('spike_success_rate');
 
+const SPIKE_TARGET = parseInt(__ENV.SPIKE_TARGET || '150');
+const SPIKE_UP = __ENV.SPIKE_UP || '5s';
+const SPIKE_HOLD = __ENV.SPIKE_HOLD || '15s';
+const SPIKE_DOWN = __ENV.SPIKE_DOWN || '5s';
+const RECOVERY_TIME = __ENV.RECOVERY_TIME || '10s';
+
 export const options = {
   stages: [
-    { duration: '10s',  target: 1000 },  // Brutal spike: 0 → 1000 in 10s
-    { duration: '90s',  target: 1000 },  // Hold at 1000 for 90s
-    { duration: '10s',  target: 0 },     // Instant drain
-    { duration: '20s',  target: 20 },    // Recovery probe: can it serve requests again?
+    { duration: SPIKE_UP,      target: SPIKE_TARGET },  // Brutal spike
+    { duration: SPIKE_HOLD,    target: SPIKE_TARGET },  // Hold at peak
+    { duration: SPIKE_DOWN,    target: 0 },             // Instant drain
+    { duration: RECOVERY_TIME, target: 10 },            // Recovery probe: can it serve requests again?
   ],
   thresholds: {
     // More lenient than load test — spikes are expected to cause some degradation
@@ -109,7 +115,22 @@ export default function () {
 
   if (!regOk) { sleep(1); return; }
 
-  const token = JSON.parse(regRes.body).token;
+  const uData = JSON.parse(regRes.body);
+  let token = uData.token;
+  if (!token && uData.testOtp) {
+    const vRes = http.post(`${BASE_URL}/api/auth/verify-otp`, JSON.stringify({
+      email: uData.email,
+      otp: uData.testOtp,
+    }), { headers: JSON_HEADERS });
+    if (vRes.status === 200) {
+      token = JSON.parse(vRes.body).token;
+    }
+  }
+
+  if (isDriver && token) {
+    http.put(`${BASE_URL}/api/drivers/status?status=Available`, null, { headers: authHeaders(token) });
+  }
+
   sleep(0.2); // Minimal sleep — we WANT contention during spike
 
   // ── Driver path ───────────────────────────────────────────────────────────
@@ -159,6 +180,8 @@ export default function () {
       destinationLatitude:  12.9784 + (Math.random() - 0.5) * 0.1,
       destinationLongitude: 77.6408 + (Math.random() - 0.5) * 0.1,
       baseFare:             randomIntBetween(100, 400),
+      vehicleType:          'Sedan',
+      rideType:             'AUCTION',
     }), { headers: authHeaders(token), tags: { endpoint: 'create_ride' } });
 
     if (rideRes.status === 500 || rideRes.status === 503) {

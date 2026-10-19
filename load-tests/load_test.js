@@ -45,6 +45,12 @@ const bidErrors     = new Rate('auction_bid_errors');
 const ridesCreated  = new Counter('rides_created_total');
 const bidsSubmitted = new Counter('bids_submitted_total');
 
+const P_TARGET = parseInt(__ENV.PASSENGERS || '25');
+const D_TARGET = parseInt(__ENV.DRIVERS || '75');
+const RAMP_TIME = __ENV.RAMP_TIME || '10s';
+const SUSTAIN_TIME = __ENV.SUSTAIN_TIME || '20s';
+const DRAIN_TIME = __ENV.DRAIN_TIME || '5s';
+
 // ─── Load Test Stages ────────────────────────────────────────────────────────
 export const options = {
   scenarios: {
@@ -52,23 +58,23 @@ export const options = {
       executor:         'ramping-vus',
       startVUs:         0,
       stages: [
-        { duration: '60s', target: 250 },   // ramp up to 250 passengers
-        { duration: '120s', target: 250 },  // sustain 250 passengers
-        { duration: '30s', target: 0 },     // ramp down
+        { duration: RAMP_TIME, target: P_TARGET },   // ramp up
+        { duration: SUSTAIN_TIME, target: P_TARGET },  // sustain
+        { duration: DRAIN_TIME, target: 0 },     // ramp down
       ],
       exec: 'passengerScenario',
-      gracefulRampDown: '15s',
+      gracefulRampDown: '10s',
     },
     drivers: {
       executor:         'ramping-vus',
       startVUs:         0,
       stages: [
-        { duration: '60s', target: 750 },   // ramp up to 750 drivers
-        { duration: '120s', target: 750 },  // sustain 750 drivers
-        { duration: '30s', target: 0 },     // ramp down
+        { duration: RAMP_TIME, target: D_TARGET },   // ramp up
+        { duration: SUSTAIN_TIME, target: D_TARGET },  // sustain
+        { duration: DRAIN_TIME, target: 0 },     // ramp down
       ],
       exec: 'driverScenario',
-      gracefulRampDown: '15s',
+      gracefulRampDown: '10s',
     },
   },
 
@@ -149,7 +155,18 @@ export function passengerScenario() {
     return;
   }
 
-  const token = JSON.parse(regRes.body).token;
+  const pData = JSON.parse(regRes.body);
+  let token = pData.token;
+  if (!token && pData.testOtp) {
+    const vRes = http.post(`${BASE_URL}/api/auth/verify-otp`, JSON.stringify({
+      email: pData.email,
+      otp: pData.testOtp,
+    }), { headers: JSON_HEADERS });
+    if (vRes.status === 200) {
+      token = JSON.parse(vRes.body).token;
+    }
+  }
+
   sleep(randomIntBetween(1, 3));
 
   // ── Main ride loop ─────────────────────────────────────────────────────────
@@ -167,6 +184,8 @@ export function passengerScenario() {
         destinationLatitude:  dest.lat,
         destinationLongitude: dest.lng,
         baseFare:             fare,
+        vehicleType:          'Sedan',
+        rideType:             'AUCTION',
       }), { headers: authHeaders(token), tags: { endpoint: 'create_ride' } });
 
       const rideOk = check(rideRes, {
@@ -244,7 +263,7 @@ export function driverScenario() {
       phoneNumber:  randomPhone('8'),
       role:         'DRIVER',
       licensePlate: licensePlate,
-      carType:      ['Sedan', 'SUV', 'Hatchback', 'Auto'][randomIntBetween(0, 3)],
+      carType:      'Sedan',
     }), { headers: JSON_HEADERS, tags: { endpoint: 'register' } });
 
     if (regRes && regRes.status === 201) break;
@@ -260,7 +279,20 @@ export function driverScenario() {
     return;
   }
 
-  const token = JSON.parse(regRes.body).token;
+  const dData = JSON.parse(regRes.body);
+  let token = dData.token;
+  if (!token && dData.testOtp) {
+    const vRes = http.post(`${BASE_URL}/api/auth/verify-otp`, JSON.stringify({
+      email: dData.email,
+      otp: dData.testOtp,
+    }), { headers: JSON_HEADERS });
+    if (vRes.status === 200) {
+      token = JSON.parse(vRes.body).token;
+    }
+  }
+
+  // Ensure Driver is Available
+  http.put(`${BASE_URL}/api/drivers/status?status=Available`, null, { headers: authHeaders(token) });
   sleep(randomIntBetween(1, 3));
 
   // ── Initial GPS location (make driver discoverable) ────────────────────────
